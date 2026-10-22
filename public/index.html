@@ -1,0 +1,260 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Uniqo — Your Style. Your Rarity.</title>
+  <meta name="description" content="Uniqo is a design showroom for clothes. Explore every detail, customise your colour, size and finish, and claim a numbered piece from an edition limited in your city.">
+  <meta name="theme-color" content="#faf6ef">
+  <meta property="og:title" content="Uniqo — Your Style. Your Rarity.">
+  <meta property="og:description" content="Limited-edition designs, capped per city. Choose yours before your city's edition is gone.">
+  <meta property="og:image" content="/assets/logo.webp">
+  <link rel="icon" href="/assets/mark.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bodoni+Moda:ital,opsz,wght@0,6..96,400..700;1,6..96,400..700&family=Playfair+Display:ital,wght@0,400..700;1,400..700&family=Inter:wght@300..700&display=swap" rel="stylesheet">
+  <link rel="preload" as="image" href="/assets/hero-runway.webp" fetchpriority="high">
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body class="home">
+  <div class="announce" data-announce></div>
+
+  <header class="site-header">
+    <div class="wrap header-row">
+      <a class="brand" href="/" aria-label="Uniqo home" data-logo></a>
+      <nav class="nav" aria-label="Main">
+        <a href="#showroom">Showroom</a>
+        <a href="#how">How it works</a>
+        <a href="#rarity">The Rarity Promise</a>
+        <a href="#craft">Craft</a>
+        <a href="#faq">FAQ</a>
+        <a href="/lobby" class="nav-lobby">Design Lobby ✦</a>
+      </nav>
+      <div class="header-actions">
+        <label class="city-pill" title="Your city decides which edition you see">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 21s-7-6.2-7-11.5A7 7 0 0 1 19 9.5C19 14.8 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.5"/></svg>
+          <span class="sr-only" hidden>City</span>
+          <select data-city aria-label="Your city"></select>
+        </label>
+        <button class="icon-btn menu-btn" type="button" data-menu aria-label="Menu"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 7h16M4 12h16M4 17h10"/></svg></button>
+      </div>
+    </div>
+  </header>
+  <script src="/js/brand.js"></script>
+
+  <nav class="mobile-nav" aria-label="Mobile">
+    <button class="icon-btn close" type="button" data-menu aria-label="Close menu"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+    <a href="#showroom">Showroom</a>
+    <a href="#how">How it works</a>
+    <a href="#rarity">The Rarity Promise</a>
+    <a href="#craft">Craft</a>
+    <a href="#faq">FAQ</a>
+        <a href="/lobby" class="nav-lobby">Design Lobby ✦</a>
+    <a href="/admin" style="font-size:16px;font-family:var(--sans);letter-spacing:.14em;text-transform:uppercase;color:var(--gold);border:0;margin-top:20px">◆ Atelier login</a>
+  </nav>
+
+  <main>
+    <!-- HERO: a cinematic runway cover -->
+    <section class="cine" aria-labelledby="cineTitle">
+      <div class="cine-bg" aria-hidden="true"><img src="/assets/hero-runway.webp" alt="" fetchpriority="high" decoding="async"></div>
+      <div class="cine-veil" aria-hidden="true"></div>
+      <div class="cine-petals" id="petals" aria-hidden="true"></div>
+
+      <div class="cine-inner wrap">
+        <span class="cine-kicker">Limited-edition couture <i>✦</i> Capped city by city</span>
+        <h1 class="cine-title" id="cineTitle"><span class="cine-word">Uniqo</span></h1>
+        <p class="cine-sub" data-hero-eyebrow>Your Style. Your Rarity.</p>
+        <p class="cine-lead" data-hero-title>Wear a design only a handful will ever own.</p>
+        <p class="cine-copy" data-hero-subtitle>Uniqo is a showroom for clothes. Walk the floor, study every seam, make it yours, and claim a numbered piece from an edition that is strictly limited in your city.</p>
+        <div class="cine-ctas">
+          <a class="btn gold" href="#showroom">Enter the showroom</a>
+          <a class="btn glass" href="/lobby">Design your own <span aria-hidden="true">✦</span></a>
+        </div>
+        <div class="live-pill hidden" id="livePill" aria-live="polite"><span class="live-dot"></span><span class="txt"></span></div>
+      </div>
+
+      <div class="cine-stats" role="list">
+        <div role="listitem"><b data-stat="designs">—</b><span>Designs on the floor</span></div>
+        <div role="listitem"><b data-stat="cities">—</b><span>Cities</span></div>
+        <div role="listitem"><b data-stat="min">—</b><span>Pieces per city, as few as</span></div>
+      </div>
+      <a class="cine-scroll" href="#how" aria-label="Scroll to discover"><span>Scroll</span><i></i></a>
+    </section>
+
+    <div class="marquee" aria-hidden="true"><div class="marquee-track">
+      <span>Capped in every city</span><span>Numbered by hand</span><span>Never restocked</span><span>Made to your measure</span><span>Your Style. Your Rarity.</span><span>Studied seam by seam</span>
+      <span>Capped in every city</span><span>Numbered by hand</span><span>Never restocked</span><span>Made to your measure</span><span>Your Style. Your Rarity.</span><span>Studied seam by seam</span>
+    </div></div>
+
+    <!-- HOW IT WORKS -->
+    <section class="block" id="how">
+      <div class="wrap">
+        <div class="section-head reveal">
+          <span class="eyebrow">The showroom, reimagined</span>
+          <h2 class="section-title">Choose clothes the way you'd <em class="gold-text">choose a machine</em></h2>
+          <p>Nobody buys a motorbike from a thumbnail. You walk the showroom, read the spec sheet, pick your colour and fit — then you ride out on something that feels like yours. We built Uniqo the same way.</p>
+        </div>
+        <div class="steps">
+          <div class="step reveal"><span class="num">01</span><h3>Walk the floor</h3><p>Every design stands on its own stage — front, detail and every colourway — with a full spec sheet: fabric, weight, fit, finish and making time.</p></div>
+          <div class="step reveal"><span class="num">02</span><h3>Make it yours</h3><p>Pick your colourway, your size or made-to-measure, and hand-finished add-ons. Watch the look change as you choose.</p></div>
+          <div class="step reveal"><span class="num">03</span><h3>Claim your number</h3><p>Each design is capped in your city. Reserving it locks in your numbered piece — say, <b>#07 of 25</b> in Hyderabad.</p></div>
+          <div class="step reveal"><span class="num">04</span><h3>Crafted for you</h3><p>Our stylist calls to confirm the details, our atelier cuts and finishes your piece, and it arrives with its own edition card.</p></div>
+        </div>
+        <div class="promises reveal">
+          <div class="promise"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18M7 15h3"/></svg><div><b>No payment to reserve</b><span>Your piece is held in your name. You pay only after your stylist confirms.</span></div></div>
+          <div class="promise"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg><div><b>Price locked on reservation</b><span>The price you see when you reserve is the price on your edition card.</span></div></div>
+          <div class="promise"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3l2.6 5.6 6 .7-4.5 4.1 1.2 6L12 16.5 6.7 19.4l1.2-6L3.4 9.3l6-.7z"/></svg><div><b>Numbered &amp; certified</b><span>Every piece carries its edition number and its own edition card.</span></div></div>
+          <div class="promise"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 20l6-6M14 4l6 6-9 9H5v-6z"/></svg><div><b>A stylist, not a checkout</b><span>A real person calls within 24 hours to perfect your fit.</span></div></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SHOWROOM -->
+    <section class="block" id="showroom" style="background:linear-gradient(var(--ivory),var(--paper));">
+      <div class="wrap">
+        <div class="section-head reveal">
+          <span class="eyebrow">The showroom floor</span>
+          <h2 class="section-title">Now showing in <em class="gold-text" data-city-name>your city</em></h2>
+          <p>Prices stay hidden until you ask. Every number you see below counts the pieces still unclaimed in your city. When it reaches zero, that design is gone from your city for good.</p>
+        </div>
+        <div class="showroom-bar">
+          <div class="chips" id="chips" role="group" aria-label="Filter by category"></div>
+          <select class="sort-select hidden" id="sort" aria-label="Sort designs">
+            <option value="">Curated order</option>
+            <option value="scarcity">Rarest first</option>
+            <option value="popular">Most loved</option>
+            <option value="newest">Newest</option>
+            <option value="price_asc" data-price>Price: low to high</option>
+            <option value="price_desc" data-price>Price: high to low</option>
+          </select>
+        </div>
+        <div class="grid" id="grid">
+          <div class="skeleton" style="aspect-ratio:4/6"></div>
+          <div class="skeleton" style="aspect-ratio:4/6"></div>
+          <div class="skeleton" style="aspect-ratio:4/6"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- DESIGN LOBBY TEASER -->
+    <section class="block lobby-teaser" id="lobby">
+      <div class="wrap lt-grid">
+        <div class="reveal">
+          <span class="eyebrow left">New · The Design Lobby</span>
+          <h2 class="section-title" style="margin:16px 0 18px;color:#fff">Don't just choose a design. <em class="gold-text">Create one.</em></h2>
+          <p class="lt-lead">Step into our virtual dressing room. Style your own avatar the way you'd dress a character in a game: pick the silhouette, then layer fabric, colour, neckline, sleeves and handwork. Every change shows up instantly, along with how it will feel to wear.</p>
+          <ul class="lt-list">
+            <li><b>12 fabrics</b><span>Cotton, georgette, crepe, rayon, chikankari, space silk, silk, chiffon, chanderi, satin silk, denim, linen</span></li>
+            <li><b>Live wear stats</b><span>Comfort, drape, stretch, breathability and formality react to every choice</span></li>
+            <li><b>An edition of one</b><span>Send your look to a stylist. It will be made exactly once, for you alone</span></li>
+          </ul>
+          <a class="btn gold" href="/lobby">Enter the Design Lobby</a>
+        </div>
+        <a class="lt-stage reveal" href="/lobby" aria-label="Enter the Design Lobby">
+          <div class="lt-avatar" id="ltAvatar"></div>
+          <div class="lt-podium"></div>
+          <span class="lt-caption" id="ltCaption">Georgette Anarkali</span>
+        </a>
+      </div>
+    </section>
+
+    <!-- RARITY PROMISE -->
+    <section class="block dark-band" id="rarity">
+      <div class="wrap">
+        <div class="section-head reveal">
+          <span class="eyebrow">The Rarity Promise</span>
+          <h2 class="section-title" style="color:#fff">Nobody in the room <em class="gold-text">wears what you wear</em></h2>
+          <p>Fast fashion makes thousands of the same thing. We make very few, and we spread them out. Each design has a fixed edition in every city. Once it's claimed, it's closed.</p>
+        </div>
+        <div class="pillars reveal">
+          <div class="pillar"><span class="big">I.</span><h3>Capped per city</h3><p>Every design has a hard limit in each city, sometimes as few as eight pieces. At the wedding, the office party or the café, the person next to you won't be wearing your outfit.</p></div>
+          <div class="pillar"><span class="big">II.</span><h3>Numbered pieces</h3><p>Your garment carries its edition number, like <i>Piece 07 / 25 · Hyderabad</i>. It's stitched in, it's on your edition card, and it belongs to you alone.</p></div>
+          <div class="pillar"><span class="big">III.</span><h3>Never restocked</h3><p>When a city's edition is complete, that design is retired there for good. No re-runs, no "back by popular demand". That's why it's worth something.</p></div>
+        </div>
+        <div class="edition-demo reveal">
+          <div>
+            <h3 style="font-size:clamp(28px,3.4vw,40px);color:#fff">Every dot is a real piece.</h3>
+            <p>This is how an edition of 25 looks in one city. Gold pieces have already found their owners. The white one is the next number, and it could be yours. You'll see a live map like this on every design.</p>
+            <a class="btn light" href="#showroom">Find your number</a>
+          </div>
+          <div class="piece-grid" id="demoGrid" aria-hidden="true"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- CRAFT / ENGINEERED -->
+    <section class="block" id="craft">
+      <div class="wrap feature-grid">
+        <div class="reveal">
+          <span class="eyebrow left">Fashion, engineered</span>
+          <h2 class="section-title" style="margin:16px 0 18px">A spec sheet for <em class="gold-text">every stitch</em></h2>
+          <p class="muted" style="font-size:17px">Online, a garment is usually just a photo and a size chart. We show you how it's built and how it will feel before you commit. Every design comes with:</p>
+          <ul class="ticks">
+            <li><span><b>An anatomy view.</b> Tap the pins on the garment to see why each detail exists, from a hidden pallu anchor to a boned neckline.</span></li>
+            <li><span><b>A full spec sheet.</b> Fabric composition, weight in GSM, lining, closure, length, care and making time.</span></li>
+            <li><span><b>A feel profile.</b> Comfort, drape, stretch, breathability and formality, each rated 1–5, so you know how it moves before you wear it.</span></li>
+            <li><span><b>Side-by-side compare.</b> Shortlist up to three designs and compare them line by line, the way you'd compare two machines.</span></li>
+          </ul>
+        </div>
+        <div class="spec-mock reveal">
+          <h4>Feel profile · <span class="muted" style="font-size:18px">sample</span></h4>
+          <div data-demo-meters></div>
+          <hr style="border:0;border-top:1px dashed var(--line);margin:22px 0">
+          <div class="spec-grid" style="grid-template-columns:1fr 1fr">
+            <div class="spec"><div><small>Fabric</small><span>Silk-crepe blend</span></div></div>
+            <div class="spec"><div><small>Weight</small><span>92 GSM · fluid</span></div></div>
+            <div class="spec"><div><small>Closure</small><span>Concealed zip</span></div></div>
+            <div class="spec"><div><small>Made in</small><span>12–15 days</span></div></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- FAQ -->
+    <section class="block" id="faq" style="background:var(--paper)">
+      <div class="wrap">
+        <div class="section-head reveal">
+          <span class="eyebrow">Good questions</span>
+          <h2 class="section-title">Before you claim your piece</h2>
+        </div>
+        <div class="faq reveal">
+          <details open><summary>Why are prices hidden?</summary><p>So you look at the design first, not a number. Tap <b>Reveal price</b> on any design to see it instantly. A few couture and bridal pieces are priced personally by our stylist, because the final price depends on your choices.</p></details>
+          <details><summary>What does "limited per city" actually mean?</summary><p>Each design has a fixed number of pieces for each city we serve. The counter on every design shows how many are still unclaimed where you live. When it reaches zero, that design is closed in your city for good, even if other cities still have pieces left.</p></details>
+          <details><summary>How do I reserve a piece? Do I pay online?</summary><p>Choose your colour, size and add-ons, then share your name, mobile number and address. That reserves your numbered piece right away. Our stylist calls you to confirm measurements, final price and payment before anything is cut.</p></details>
+          <details><summary>Can I get it made to my measurements?</summary><p>Yes. Most designs offer <b>Made to measure</b>. Pick it as your size and enter your bust, waist, hip and height. Our stylist will check them with you on the confirmation call.</p></details>
+          <details><summary>How long does it take?</summary><p>Every design shows its making time in the spec sheet, usually 6 to 18 days, and up to 45 days for bridal couture. Your piece is made for you once you confirm, not taken off a shelf.</p></details>
+          <details><summary>Can I tell you what I think of a design?</summary><p>Please do. Every design has a one-tap feedback panel: <i>Love it</i>, <i>Like it</i> or <i>Not for me</i>, with room for a note if you want. We read all of it, and it shapes what we design next.</p></details>
+        </div>
+      </div>
+    </section>
+
+    <!-- CTA -->
+    <section class="block dark-band" style="text-align:center">
+      <div class="wrap reveal" style="position:relative">
+        <span class="eyebrow">Your Style. Your Rarity.</span>
+        <h2 class="section-title" style="color:#fff;margin:18px auto 22px;max-width:820px">Your city's edition is <em class="gold-text">counting down</em>.</h2>
+        <a class="btn gold" href="#showroom">Explore the designs</a>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="wrap">
+      <div class="footer-grid">
+        <div>
+          <span class="footer-logo" data-logo></span>
+          <p style="max-width:380px;margin-top:20px">Limited-edition design, made to order and capped city by city. Built for people who would rather be remembered than matched.</p>
+        </div>
+        <div><h4>Now serving</h4><ul data-cities></ul></div>
+        <div><h4>Talk to a stylist</h4><ul data-contact></ul></div>
+      </div>
+      <div class="footer-base"><span>© <span data-year></span> Uniqo. Your Style. Your Rarity.</span><span>Every piece numbered. Every edition final.</span><a class="atelier-link" href="/admin">◆ Atelier login (Admin)</a></div>
+    </div>
+  </footer>
+
+  <script src="/js/common.js"></script>
+  <script src="/js/home.js"></script>
+  <script src="/js/lobby-render.js"></script>
+  <script src="/js/lobby-teaser.js"></script>
+</body>
+</html>

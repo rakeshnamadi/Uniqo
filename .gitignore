@@ -1,0 +1,13 @@
+# local database, customer data and uploads - never commit these
+data/
+db/mysql/05_data.sql
+public/uploads/u/
+
+# your own product photos (upload them through the admin panel instead)
+Images/
+
+# build output and tooling
+dist/
+__pycache__/
+*.pyc
+.claude/

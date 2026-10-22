@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Design Lobby — Uniqo</title>
+  <meta name="description" content="Step into the Uniqo Design Lobby. Dress your avatar in your choice of fabric, colour, neckline, sleeves and handwork, and commission a look made only once, for you.">
+  <meta name="theme-color" content="#0f0d0c">
+  <link rel="icon" href="/assets/mark.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400..700;1,400..700&family=Inter:wght@300..700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css">
+  <link rel="stylesheet" href="/css/lobby.css">
+</head>
+<body class="lobby">
+  <div class="lb-app" id="app">
+    <header class="lb-top">
+      <a class="brand" href="/" aria-label="Uniqo home" data-logo></a>
+      <script src="/js/brand.js"></script>
+      <div class="lb-title">
+        <span class="lb-kicker">Design Lobby</span>
+        <span class="lb-code" id="lookCode" title="Your look's unique code">UQ-L · ——</span>
+      </div>
+      <div class="lb-top-actions">
+        <button type="button" class="lb-ghost" id="meBtn" title="Sign in to save designs to your account">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="8" r="4"/><path d="M4 21c1-4 4.5-6 8-6s7 2 8 6"/></svg>
+          <span id="meLabel">Sign in</span>
+        </button>
+        <button type="button" class="lb-ghost" id="wardrobeBtn" title="Saved looks">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M12 4a2 2 0 1 1 2 2c-1 0-2 .8-2 2l8.4 6.2c.9.7.4 2-.7 2H4.3c-1.1 0-1.6-1.3-.7-2L12 8"/></svg>
+          <span>Wardrobe</span><b id="wardCount">0</b>
+        </button>
+        <button type="button" class="lb-ghost" id="shareBtn" title="Copy a link to this look">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 4"/></svg>
+          <span>Share</span>
+        </button>
+        <a class="lb-ghost" href="/" title="Back to the showroom"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6 6l12 12M18 6L6 18"/></svg><span>Exit</span></a>
+      </div>
+    </header>
+
+    <nav class="lb-rail" id="rail" aria-label="Customise"></nav>
+
+    <section class="lb-panel" id="panel" aria-live="polite"></section>
+
+    <main class="lb-stage" id="stage">
+      <div class="lb-spot" aria-hidden="true"></div>
+      <div class="lb-floor" aria-hidden="true"></div>
+      <div class="lb-dust" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+      <div class="lb-tier" id="tier"></div>
+      <div class="lb-view-label" id="viewLabel">Front</div>
+      <div class="lb-avatar" id="avatar"></div>
+      <div class="lb-podium" aria-hidden="true"></div>
+      <div class="lb-notes" id="notes"></div>
+      <div class="lb-tools">
+        <button type="button" id="undoBtn" title="Undo (Z)" aria-label="Undo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 14L4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/></svg></button>
+        <button type="button" id="redoBtn" title="Redo (Y)" aria-label="Redo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M15 14l5-5-5-5"/><path d="M20 9H10a6 6 0 0 0 0 12h3"/></svg></button>
+        <button type="button" id="dimBtn" class="lb-dim" title="Switch between 3D and 2D (D)" aria-label="Switch between 3D and 2D view">3D</button>
+        <button type="button" id="flipBtn" title="Turn around (F)" aria-label="Turn the avatar around"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 12a9 9 0 0 1 15.5-6.2M21 12a9 9 0 0 1-15.5 6.2"/><path d="M18.5 2v4h-4M5.5 22v-4h4"/></svg></button>
+        <button type="button" id="surpriseBtn" class="lb-surprise" title="Surprise me (R)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3l1.8 4.6L18.5 9l-4.7 1.4L12 15l-1.8-4.6L5.5 9l4.7-1.4z"/><path d="M19 15l.9 2.1 2.1.9-2.1.9L19 21l-.9-2.1L16 18l2.1-.9z"/></svg><span>Surprise me</span></button>
+      </div>
+      <p class="lb-hint">Drag to turn the avatar 360° · <kbd>Z</kbd> undo · <kbd>R</kbd> surprise · <kbd>D</kbd> 3D/2D</p>
+    </main>
+
+    <aside class="lb-sheet" id="sheet" aria-label="Build sheet"></aside>
+
+    <div class="lb-dock" id="dock"></div>
+  </div>
+
+  <script src="/js/common.js"></script>
+  <script src="/js/lobby-render.js"></script>
+  <script src="/js/lobby-3d.js"></script>
+  <script src="/js/lobby.js"></script>
+</body>
+</html>

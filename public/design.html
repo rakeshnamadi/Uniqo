@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Design — Uniqo</title>
+  <meta name="description" content="Explore every detail of this limited-edition Uniqo design, customise it, and claim your numbered piece.">
+  <meta name="theme-color" content="#faf6ef">
+  <link rel="icon" href="/assets/mark.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400..700;1,400..700&family=Inter:wght@300..700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body class="pdp-page">
+  <div class="announce" data-announce></div>
+  <header class="site-header">
+    <div class="wrap header-row">
+      <a class="brand" href="/" aria-label="Uniqo home" data-logo></a>
+      <nav class="nav" aria-label="Main">
+        <a href="/#showroom" class="active">Showroom</a>
+        <a href="/#how">How it works</a>
+        <a href="/#rarity">The Rarity Promise</a>
+        <a href="/#faq">FAQ</a>
+        <a href="/lobby" class="nav-lobby">Design Lobby ✦</a>
+      </nav>
+      <div class="header-actions">
+        <label class="city-pill" title="Your city decides which edition you see">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 21s-7-6.2-7-11.5A7 7 0 0 1 19 9.5C19 14.8 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.5"/></svg>
+          <select data-city aria-label="Your city"></select>
+        </label>
+        <button class="icon-btn menu-btn" type="button" data-menu aria-label="Menu"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 7h16M4 12h16M4 17h10"/></svg></button>
+      </div>
+    </div>
+  </header>
+  <script src="/js/brand.js"></script>
+  <nav class="mobile-nav" aria-label="Mobile">
+    <button class="icon-btn close" type="button" data-menu aria-label="Close menu"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+    <a href="/#showroom">Showroom</a>
+    <a href="/#how">How it works</a>
+    <a href="/#rarity">The Rarity Promise</a>
+    <a href="/#faq">FAQ</a>
+        <a href="/lobby" class="nav-lobby">Design Lobby ✦</a>
+    <a href="/admin" style="font-size:16px;font-family:var(--sans);letter-spacing:.14em;text-transform:uppercase;color:var(--gold);border:0;margin-top:20px">◆ Atelier login</a>
+  </nav>
+
+  <main class="wrap" id="app">
+    <div class="pdp" style="padding-top:30px">
+      <div class="skeleton" style="aspect-ratio:4/5"></div>
+      <div class="panel"><div class="skeleton" style="height:60px"></div><div class="skeleton" style="height:200px"></div><div class="skeleton" style="height:240px"></div></div>
+    </div>
+  </main>
+
+  <footer class="site-footer">
+    <div class="wrap">
+      <div class="footer-grid">
+        <div>
+          <span class="footer-logo" data-logo></span>
+          <p style="max-width:380px;margin-top:20px">Limited-edition design, made to order and capped city by city. Built for people who would rather be remembered than matched.</p>
+        </div>
+        <div><h4>Now serving</h4><ul data-cities></ul></div>
+        <div><h4>Talk to a stylist</h4><ul data-contact></ul></div>
+      </div>
+      <div class="footer-base"><span>© <span data-year></span> Uniqo. Your Style. Your Rarity.</span><span>Every piece numbered. Every edition final.</span><a class="atelier-link" href="/admin">◆ Atelier login (Admin)</a></div>
+    </div>
+  </footer>
+
+  <script src="/js/common.js"></script>
+  <script src="/js/design.js"></script>
+</body>
+</html>

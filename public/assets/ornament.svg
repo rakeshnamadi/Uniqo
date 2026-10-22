@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 28">
+  <defs>
+    <linearGradient id="line" x1="0" x2="240" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#b8873b" stop-opacity="0"/><stop offset=".38" stop-color="#b8873b"/>
+      <stop offset=".62" stop-color="#b8873b"/><stop offset="1" stop-color="#b8873b" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="gem" x1="104" y1="2" x2="136" y2="26" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#8f6224"/><stop offset=".5" stop-color="#f4dfae"/><stop offset="1" stop-color="#a8792f"/>
+    </linearGradient>
+  </defs>
+  <path d="M0 14h88M152 14h88" stroke="url(#line)" stroke-width="1"/>
+  <!-- paisley-like scrolls either side -->
+  <path d="M88 14c4-8 14-9 17-2 2 5-3 8-6 5-2-2 0-4 2-3" fill="none" stroke="url(#gem)" stroke-width="1.2" stroke-linecap="round"/>
+  <path d="M152 14c-4-8-14-9-17-2-2 5 3 8 6 5 2-2 0-4-2-3" fill="none" stroke="url(#gem)" stroke-width="1.2" stroke-linecap="round"/>
+  <path d="M88 14c4 6 10 7 14 4" fill="none" stroke="url(#gem)" stroke-width="1" stroke-linecap="round"/>
+  <path d="M152 14c-4 6-10 7-14 4" fill="none" stroke="url(#gem)" stroke-width="1" stroke-linecap="round"/>
+  <!-- central gem -->
+  <path d="M120 3l9 11-9 11-9-11z" fill="url(#gem)"/>
+  <path d="M120 8l4.5 6-4.5 6-4.5-6z" fill="#fffdf9"/>
+  <circle cx="80" cy="14" r="1.6" fill="#b8873b"/><circle cx="160" cy="14" r="1.6" fill="#b8873b"/>
+</svg>

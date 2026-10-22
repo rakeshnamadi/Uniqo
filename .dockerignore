@@ -1,0 +1,10 @@
+# keep the image small and free of local data
+data/
+Images/
+db/
+dist/
+.claude/
+__pycache__/
+*.pyc
+start.bat
+*.md
