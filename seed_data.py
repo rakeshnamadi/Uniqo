@@ -283,6 +283,138 @@ DESIGNS = [
 ]
 
 
+# ----------------------------------------------------------------------------- the house's own designs
+# Real product photography and design sketches (public/uploads/catalog/). Prices start as "on request":
+# the base prices below are placeholders for the atelier to replace in Admin > Designs.
+CAT = "/uploads/catalog/"
+CATALOG = [
+    {
+        "name": "Gulaab Anarkali Suit", "category": "Anarkali", "badge": "New drop", "featured": True,
+        "price": 12500, "price_mode": "request",
+        "tagline": "Rani pink, hand-embellished, and made to twirl.",
+        "story": "A floor-length anarkali in a deep rani pink, cut with a fitted bodice and a softly gathered flare that "
+                 "moves like water. The scooped neckline and the elbow-length cuffs are framed in hand-sewn pearl and zari "
+                 "embroidery, and it comes with a sheer dupatta printed with gold florals and edged in scalloped lace.",
+        "occasions": ["Festive", "Mehendi", "Sangeet"],
+        "colors": [{"name": "Rani Pink", "hex": "#b0245a", "image": CAT + "gulaab-anarkali-suit-1.jpg", "delta": 0}],
+        "images": [CAT + "gulaab-anarkali-suit-1.jpg", CAT + "gulaab-anarkali-suit-detail.jpg", CAT + "gulaab-anarkali-suit-dupatta.jpg"],
+        "addons": [{"name": "Matching churidar", "desc": "Fitted churidar in the same rani pink", "delta": 1200},
+                   {"name": "Bridal-weight dupatta", "desc": "Heavier dupatta with a denser gold print", "delta": 1800}],
+        "specs": {"fabric": "Chanderi silk-cotton", "lining": "Soft cotton lining, full", "weight": "Light and airy",
+                  "fit": "Fitted bodice, gathered flare", "neckline": "Scooped square, embroidered border",
+                  "sleeve": "Elbow-length, embroidered cuff", "length": "Floor length",
+                  "closure": "Concealed side zip", "embellishment": "Hand pearl & zari work, gold-printed dupatta",
+                  "care": "Dry clean recommended", "making_days": "10-12 days"},
+        "feel": {"comfort": 5, "drape": 4, "stretch": 2, "breathability": 5, "formality": 4},
+        "hotspots": [{"x": 44, "y": 16, "title": "Embroidered neckline", "text": "A scooped square neck framed in hand-sewn pearl and zari."},
+                     {"x": 20, "y": 25, "title": "Jewelled cuff", "text": "Elbow sleeves finished with the same embroidered border."},
+                     {"x": 61, "y": 55, "title": "Gold-print dupatta", "text": "Sheer dupatta with gold florals and a scalloped lace edge."},
+                     {"x": 41, "y": 93, "title": "Twirl hem", "text": "A softly gathered flare that opens beautifully as you move."}],
+        "editions": [("Hyderabad", 15), ("Bengaluru", 15), ("Mumbai", 12), ("Delhi", 15), ("Chennai", 12)],
+    },
+    {
+        "name": "Noir Vine Maxi Frock", "category": "Gown", "badge": "Signature", "featured": True,
+        "price": 16500, "price_mode": "request",
+        "tagline": "A black ball-skirt frock wrapped in silver vines.",
+        "story": "A dramatic black maxi frock with a ruched sweetheart bodice and soft gathered cap sleeves, set on a boned "
+                 "corset waist. The full circle skirt falls in deep, generous folds, while hand-embroidered silver vines and "
+                 "blossoms climb across the bodice and down the skirt. At the back, a scooped neckline and a lace-up corset "
+                 "panel give it a fitted, made-for-you finish.",
+        "occasions": ["Cocktail", "Reception", "Party"],
+        "colors": [{"name": "Noir & Silver", "hex": "#17130f", "image": CAT + "noir-vine-maxi-frock-1.jpg", "delta": 0}],
+        "images": [CAT + "noir-vine-maxi-frock-1.jpg", CAT + "noir-vine-maxi-frock-back.jpg", CAT + "noir-vine-maxi-frock-detail.jpg", CAT + "noir-vine-maxi-frock-laceup.jpg"],
+        "addons": [{"name": "Can-can underskirt", "desc": "Adds extra volume to the circle skirt", "delta": 1500},
+                   {"name": "Silver vine on the back", "desc": "Continues the embroidery across the back skirt", "delta": 2200}],
+        "specs": {"fabric": "Satin-backed crepe", "lining": "Fully lined", "weight": "Structured bodice, flowing skirt",
+                  "fit": "Boned corset waist, full circle skirt", "neckline": "Ruched sweetheart",
+                  "sleeve": "Gathered cap sleeve", "length": "Maxi, below the knee to ankle", "closure": "Lace-up corset back",
+                  "embellishment": "Hand-embroidered silver vines and blossoms", "care": "Dry clean only", "making_days": "14-18 days"},
+        "feel": {"comfort": 3, "drape": 4, "stretch": 1, "breathability": 3, "formality": 5},
+        "hotspots": [{"x": 49, "y": 20, "title": "Ruched sweetheart", "text": "Soft gathers shape the bust over a structured base."},
+                     {"x": 36, "y": 13, "title": "Gathered cap sleeve", "text": "Delicate pleated caps that sit just off the shoulder line."},
+                     {"x": 65, "y": 47, "title": "Silver vine embroidery", "text": "Hand-stitched vines and blossoms that climb the skirt."},
+                     {"x": 50, "y": 90, "title": "Circle skirt", "text": "A full circle cut for that deep, rippling hem."}],
+        "editions": [("Hyderabad", 12), ("Bengaluru", 12), ("Mumbai", 10), ("Delhi", 12), ("Chennai", 10)],
+    },
+    {
+        "name": "Papillon Corset Top", "category": "Tops", "badge": "Handcrafted",
+        "price": 6800, "price_mode": "request",
+        "tagline": "A cognac corset where butterflies come to rest.",
+        "story": "A sculpted corset top in a rich cognac brown, shaped by princess seams into a sweetheart neckline and a "
+                 "flared peplum. Fluttering sheer sleeves soften the structure, a column of buttons runs down the front, and "
+                 "gold butterflies and leaves are embroidered by hand as if they had just landed.",
+        "occasions": ["Party", "Brunch", "Date night"],
+        "colors": [{"name": "Cognac", "hex": "#7a3e1d", "image": CAT + "papillon-corset-top-1.jpg", "delta": 0}],
+        "images": [CAT + "papillon-corset-top-1.jpg", CAT + "papillon-corset-top-detail.jpg"],
+        "addons": [{"name": "Removable sleeves", "desc": "Wear it strappy or with the sheer flutter sleeves", "delta": 700}],
+        "specs": {"fabric": "Textured brocade", "lining": "Cotton-lined, with soft boning", "weight": "Structured",
+                  "fit": "Corseted, princess seams, peplum flare", "neckline": "Sweetheart", "sleeve": "Sheer flutter sleeve",
+                  "length": "Hip length with peplum", "closure": "Front buttons + concealed side zip",
+                  "embellishment": "Hand-embroidered gold butterflies and leaves", "care": "Dry clean only", "making_days": "8-10 days"},
+        "feel": {"comfort": 3, "drape": 2, "stretch": 1, "breathability": 3, "formality": 4},
+        "hotspots": [{"x": 48, "y": 30, "title": "Sweetheart neckline", "text": "Princess seams curve into a softly structured sweetheart."},
+                     {"x": 56, "y": 40, "title": "Butterfly embroidery", "text": "Gold butterflies and leaves, embroidered by hand."},
+                     {"x": 10, "y": 22, "title": "Flutter sleeve", "text": "Sheer, floating sleeves that soften the corset."},
+                     {"x": 48, "y": 57, "title": "Button front", "text": "A column of covered buttons down the centre."},
+                     {"x": 26, "y": 81, "title": "Peplum flare", "text": "A gentle flare at the hip, edged with a fine trim."}],
+        "editions": [("Hyderabad", 20), ("Bengaluru", 20), ("Mumbai", 18), ("Delhi", 20), ("Chennai", 15)],
+    },
+    {
+        "name": "Lattice Wrap Empire Top", "category": "Tops", "badge": "",
+        "price": 4900, "price_mode": "request",
+        "tagline": "A black wrap top traced in silver lattice.",
+        "story": "An easy black wrap top with a deep V neckline, an empire waist that ties at the side, and a peplum that "
+                 "swings as you walk. Silver lattice embroidery runs along the wrap, the flutter sleeves and the "
+                 "scalloped hem, turning a wardrobe essential into something only you will own.",
+        "occasions": ["Workwear", "Casual", "Dinner"],
+        "colors": [{"name": "Black & Silver", "hex": "#141110", "image": CAT + "lattice-wrap-empire-top-1.jpg", "delta": 0}],
+        "images": [CAT + "lattice-wrap-empire-top-1.jpg", CAT + "lattice-wrap-empire-top-detail.jpg"],
+        "addons": [{"name": "Contrast lattice colour", "desc": "Gold or rose-gold lattice instead of silver", "delta": 500}],
+        "specs": {"fabric": "Fluid crepe", "lining": "Unlined, breathable", "weight": "Light",
+                  "fit": "Wrap front, empire waist, peplum", "neckline": "Wrap V-neck", "sleeve": "Short flutter sleeve",
+                  "length": "Hip length", "closure": "Side tie", "embellishment": "Silver lattice embroidery, scalloped hem",
+                  "care": "Gentle hand wash", "making_days": "6-8 days"},
+        "feel": {"comfort": 5, "drape": 4, "stretch": 2, "breathability": 4, "formality": 3},
+        "hotspots": [{"x": 55, "y": 39, "title": "Lattice wrap", "text": "Silver lattice embroidery traces the wrap V-neck."},
+                     {"x": 21, "y": 45, "title": "Flutter sleeve", "text": "Short, floaty sleeves with a matching lattice edge."},
+                     {"x": 66, "y": 68, "title": "Side tie", "text": "Ties at the empire waist, so the fit is always yours."},
+                     {"x": 49, "y": 82, "title": "Scalloped hem", "text": "A swingy peplum finished in scalloped lattice."}],
+        "editions": [("Hyderabad", 25), ("Bengaluru", 25), ("Mumbai", 20), ("Delhi", 25), ("Chennai", 20)],
+    },
+    {
+        "name": "Cocoa Cold-Shoulder Top", "category": "Tops", "badge": "Everyday luxe",
+        "price": 3900, "price_mode": "request",
+        "tagline": "One bare shoulder, two layers, endless ease.",
+        "story": "A relaxed chocolate-brown crop top cut on the diagonal to bare one shoulder, with long bell sleeves that "
+                 "fall past the wrist. Underneath, a fitted black corset tank adds shape and a strap of contrast at the "
+                 "shoulder. Shown styled with beige trousers and a belt.",
+        "occasions": ["Casual", "Brunch", "Travel"],
+        "colors": [{"name": "Cocoa & Black", "hex": "#5a2e18", "image": CAT + "cocoa-cold-shoulder-top-1.jpg", "delta": 0}],
+        "images": [CAT + "cocoa-cold-shoulder-top-1.jpg", CAT + "cocoa-cold-shoulder-top-detail.jpg"],
+        "addons": [{"name": "Matching corset tank", "desc": "The fitted black inner tank, as shown", "delta": 1200}],
+        "specs": {"fabric": "Soft knit jersey", "lining": "Unlined", "weight": "Light, relaxed",
+                  "fit": "Relaxed crop over a fitted tank", "neckline": "Asymmetric one-shoulder", "sleeve": "Long bell sleeve",
+                  "length": "Cropped, layered", "closure": "Pull-on", "embellishment": "Contrast layering",
+                  "care": "Machine wash cold", "making_days": "5-7 days"},
+        "feel": {"comfort": 5, "drape": 4, "stretch": 4, "breathability": 4, "formality": 2},
+        "hotspots": [{"x": 55, "y": 22, "title": "One-shoulder neckline", "text": "Cut on the diagonal to bare one shoulder."},
+                     {"x": 85, "y": 70, "title": "Bell sleeve", "text": "Long sleeves that flare past the wrist."},
+                     {"x": 52, "y": 52, "title": "Corset tank", "text": "A fitted black inner layer for shape and contrast."}],
+        "editions": [("Hyderabad", 25), ("Bengaluru", 25), ("Mumbai", 25), ("Delhi", 25), ("Chennai", 20)],
+    },
+]
+
+
+def catalog():
+    """The house designs, ready for the database (same shape the admin panel saves)."""
+    out = []
+    for d in CATALOG:
+        out.append({**{k: v for k, v in d.items() if k != "editions"},
+                    "sizes": SIZES, "made_to_measure": True, "mtm_delta": 0,
+                    "editions": [{"location": l, "limit": n} for l, n in d["editions"]], "status": "active"})
+    return out
+
+
 def build(out_dir):
     """Write illustration SVGs into out_dir and return design payloads for the database."""
     os.makedirs(out_dir, exist_ok=True)

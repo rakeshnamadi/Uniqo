@@ -1344,6 +1344,23 @@ def init_db():
                           json.dumps(d), now - n * 86400, now))
         put_setting(conn, "seeded", True)
         print("  Seeded the showroom with sample designs.")
+    if not conn.execute("SELECT 1 FROM settings WHERE key = 'catalog_v1'").fetchone():
+        # the house's own designs: added once, at the front of the floor; never overwrites admin edits
+        import seed_data
+        now = time.time()
+        first = conn.execute("SELECT COALESCE(MIN(sort_order), 0) FROM designs").fetchone()[0]
+        items = seed_data.catalog()
+        added = 0
+        for n, raw in enumerate(items):
+            d = clean_design(raw)
+            slug = slugify(d["name"])
+            if conn.execute("SELECT 1 FROM designs WHERE slug = ?", (slug,)).fetchone():
+                continue
+            conn.execute("INSERT INTO designs(slug, status, sort_order, data, created_at, updated_at) VALUES(?,?,?,?,?,?)",
+                         (slug, raw.get("status", "active"), first - len(items) + n, json.dumps(d), now + (len(items) - n), now))
+            added += 1
+        put_setting(conn, "catalog_v1", True)
+        print(f"  Added {added} house designs to the showroom.")
     conn.close()
 
 
