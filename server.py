@@ -1159,7 +1159,7 @@ def admin_password(h, conn, body):
 MIME = {".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8",
         ".js": "application/javascript; charset=utf-8", ".json": "application/json",
         ".svg": "image/svg+xml", ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
-        ".webp": "image/webp", ".gif": "image/gif", ".ico": "image/x-icon", ".txt": "text/plain; charset=utf-8"}
+        ".webp": "image/webp", ".gif": "image/gif", ".glb": "model/gltf-binary", ".ico": "image/x-icon", ".txt": "text/plain; charset=utf-8"}
 
 PAGE_ALIASES = {"/": "/index.html", "/admin": "/admin/index.html", "/admin/": "/admin/index.html",
                 "/design": "/design.html", "/lobby": "/lobby.html", "/favicon.ico": "/assets/mark.svg"}

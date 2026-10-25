@@ -6,6 +6,12 @@ public/uploads/u/
 # your own product photos (upload them through the admin panel instead)
 Images/
 
+# licensed third-party 3D assets (e.g. RenderPeople) must not be published in this public repo
+3D Model/
+tex/
+*.fbx
+*.uasset
+
 # build output and tooling
 dist/
 __pycache__/

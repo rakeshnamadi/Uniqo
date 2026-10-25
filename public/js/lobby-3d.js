@@ -133,6 +133,178 @@ const UQ3D = (() => {
     return LEG[LEG.length - 1][1] + LEG[LEG.length - 1][3];
   };
   const mirrorRings = (rings, side) => rings.map((r) => ({ ...r, cx: (r.cx || 0) * side }));
+  const HIP = () => { const t = torsoAt(.925); return { rx: t.rx, rz: t.rz, cz: t.cz }; };   // widest hip ring
+
+  /* ------------------------------------------------------------------ an exported body (.glb)
+     A clothes-free base body exported from Blender (see docs/AVATAR_EXPORT.md). It replaces the
+     procedural body, and is measured slice by slice so every garment is refitted to it. */
+  const AV_HEIGHT = 1.69;
+  let avatarPromise = null;
+
+  function parseGLB(buf) {
+    const dv = new DataView(buf);
+    if (dv.getUint32(0, true) !== 0x46546c67) throw new Error("Not a .glb file");
+    let off = 12, json = null, bin = null;
+    while (off + 8 <= buf.byteLength) {
+      const len = dv.getUint32(off, true), type = dv.getUint32(off + 4, true);
+      const chunk = new Uint8Array(buf, off + 8, len);
+      if (type === 0x4e4f534a) json = JSON.parse(new TextDecoder().decode(chunk));
+      else if (type === 0x004e4942) bin = chunk;
+      off += 8 + len;
+    }
+    if (!json) throw new Error("GLB has no JSON chunk");
+    if ((json.extensionsRequired || []).length) throw new Error("GLB needs extensions: " + json.extensionsRequired.join(", ") + " (export with Draco off)");
+    return { g: json, bin };
+  }
+  function readAccessor(g, bin, i) {
+    const a = g.accessors[i], bv = g.bufferViews[a.bufferView];
+    const n = { SCALAR: 1, VEC2: 2, VEC3: 3, VEC4: 4 }[a.type];
+    const T = { 5120: Int8Array, 5121: Uint8Array, 5122: Int16Array, 5123: Uint16Array, 5125: Uint32Array, 5126: Float32Array }[a.componentType];
+    const size = T.BYTES_PER_ELEMENT, stride = bv.byteStride || n * size, base = (bv.byteOffset || 0) + (a.byteOffset || 0);
+    const out = new Float64Array(a.count * n), dv = new DataView(bin.buffer, bin.byteOffset);
+    const get = { 5120: "getInt8", 5121: "getUint8", 5122: "getInt16", 5123: "getUint16", 5125: "getUint32", 5126: "getFloat32" }[a.componentType];
+    const norm = a.normalized ? { 5120: 127, 5121: 255, 5122: 32767, 5123: 65535 }[a.componentType] || 1 : 1;
+    for (let k = 0; k < a.count; k++) for (let c = 0; c < n; c++) out[k * n + c] = dv[get](base + k * stride + c * size, true) / norm;
+    return out;
+  }
+  const mat4mul = (a, b) => { const o = new Array(16); for (let c = 0; c < 4; c++) for (let r = 0; r < 4; r++) { let s = 0; for (let k = 0; k < 4; k++) s += a[k * 4 + r] * b[c * 4 + k]; o[c * 4 + r] = s; } return o; };
+  function nodeMatrix(n) {
+    if (n.matrix) return n.matrix.slice();
+    const [tx, ty, tz] = n.translation || [0, 0, 0], [x, y, z, w] = n.rotation || [0, 0, 0, 1], [sx, sy, sz] = n.scale || [1, 1, 1];
+    return [(1 - 2 * (y * y + z * z)) * sx, (2 * (x * y + z * w)) * sx, (2 * (x * z - y * w)) * sx, 0,
+      (2 * (x * y - z * w)) * sy, (1 - 2 * (x * x + z * z)) * sy, (2 * (y * z + x * w)) * sy, 0,
+      (2 * (x * z + y * w)) * sz, (2 * (y * z - x * w)) * sz, (1 - 2 * (x * x + y * y)) * sz, 0, tx, ty, tz, 1];
+  }
+
+  /* every triangle primitive of the scene, flattened into world space */
+  function primitives(g, bin) {
+    const out = [], I = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+    const visit = (ni, parent) => {
+      const n = g.nodes[ni], M = mat4mul(parent, nodeMatrix(n));
+      if (n.mesh !== undefined && !n.skin) g.meshes[n.mesh].primitives.forEach((p) => {
+        if ((p.mode ?? 4) !== 4) return;
+        const P = readAccessor(g, bin, p.attributes.POSITION), cnt = P.length / 3;
+        const Nn = p.attributes.NORMAL !== undefined ? readAccessor(g, bin, p.attributes.NORMAL) : null;
+        const UV = p.attributes.TEXCOORD_0 !== undefined ? readAccessor(g, bin, p.attributes.TEXCOORD_0) : new Float64Array(cnt * 2);
+        const idx = p.indices !== undefined ? Uint32Array.from(readAccessor(g, bin, p.indices)) : Uint32Array.from({ length: cnt }, (_, i) => i);
+        const pos = new Float32Array(cnt * 3), nor = new Float32Array(cnt * 3);
+        for (let k = 0; k < cnt; k++) {
+          const x = P[k * 3], y = P[k * 3 + 1], z = P[k * 3 + 2];
+          pos[k * 3] = M[0] * x + M[4] * y + M[8] * z + M[12]; pos[k * 3 + 1] = M[1] * x + M[5] * y + M[9] * z + M[13]; pos[k * 3 + 2] = M[2] * x + M[6] * y + M[10] * z + M[14];
+          if (Nn) { const a = Nn[k * 3], b = Nn[k * 3 + 1], c = Nn[k * 3 + 2];
+            const v = norm([M[0] * a + M[4] * b + M[8] * c, M[1] * a + M[5] * b + M[9] * c, M[2] * a + M[6] * b + M[10] * c]); nor.set(v, k * 3); }
+        }
+        if (!Nn) {                                                         // smooth normals when the export has none
+          for (let t = 0; t < idx.length; t += 3) {
+            const [i0, i1, i2] = [idx[t] * 3, idx[t + 1] * 3, idx[t + 2] * 3];
+            const f = cross(sub([pos[i1], pos[i1 + 1], pos[i1 + 2]], [pos[i0], pos[i0 + 1], pos[i0 + 2]]), sub([pos[i2], pos[i2 + 1], pos[i2 + 2]], [pos[i0], pos[i0 + 1], pos[i0 + 2]]));
+            [i0, i1, i2].forEach((i) => { nor[i] += f[0]; nor[i + 1] += f[1]; nor[i + 2] += f[2]; });
+          }
+          for (let i = 0; i < nor.length; i += 3) nor.set(norm([nor[i], nor[i + 1], nor[i + 2]]), i);
+        }
+        const mat = p.material !== undefined ? g.materials[p.material] : {};
+        const pbr = mat.pbrMetallicRoughness || {};
+        out.push({ name: (n.name || "") + " " + (g.meshes[n.mesh].name || "") + " " + (mat.name || ""), pos, nor, uv: Float32Array.from(UV), idx,
+          color: (pbr.baseColorFactor || [1, 1, 1, 1]).slice(0, 3), alphaMode: mat.alphaMode || "OPAQUE",
+          tex: pbr.baseColorTexture ? g.textures[pbr.baseColorTexture.index].source : undefined });
+      });
+      (n.children || []).forEach((c) => visit(c, M));
+    };
+    (g.scenes[g.scene || 0].nodes || []).forEach((ni) => visit(ni, I));
+    return out;
+  }
+
+  /* horizontal cross-section of the body (plane y cut through its triangles), split into torso/limbs by gaps along x */
+  function sliceClusters(M, y, gap = .016) {
+    const P = M.pos, I = M.idx, pts = [];
+    for (let t = 0; t < I.length; t += 3) for (let e = 0; e < 3; e++) {
+      const a = I[t + e] * 3, b = I[t + (e + 1) % 3] * 3, ya = P[a + 1], yb = P[b + 1];
+      if ((ya < y) === (yb < y)) continue;
+      const f = (y - ya) / (yb - ya);
+      pts.push([P[a] + (P[b] - P[a]) * f, P[a + 2] + (P[b + 2] - P[a + 2]) * f]);
+    }
+    pts.sort((a, b) => a[0] - b[0]);
+    const groups = []; let cur = [];
+    for (const p of pts) { if (cur.length && p[0] - cur[cur.length - 1][0] > gap) { groups.push(cur); cur = []; } cur.push(p); }
+    if (cur.length) groups.push(cur);
+    return groups.filter((c) => c.length >= 6).map((c) => {
+      let x0 = 1e9, x1 = -1e9, z0 = 1e9, z1 = -1e9;
+      c.forEach(([x, z]) => { x0 = Math.min(x0, x); x1 = Math.max(x1, x); z0 = Math.min(z0, z); z1 = Math.max(z1, z); });
+      const cx = (x0 + x1) / 2, cz = (z0 + z1) / 2, rx = Math.max((x1 - x0) / 2, 1e-4), rz = Math.max((z1 - z0) / 2, 1e-4);
+      // grow the box-sized ellipse until it encloses every point (a bust sits in the box's corners)
+      const k = Math.sqrt(c.reduce((m, [x, z]) => Math.max(m, ((x - cx) / rx) ** 2 + ((z - cz) / rz) ** 2), 1));
+      return { x0, x1, cx, cz, rx: rx * k, rz: rz * k };
+    });
+  }
+
+  /* refit the torso, arm and leg profiles (and so every garment) to the measured body */
+  function fitProfiles(M) {
+    const fitted = { torso: 0, arm: 0, leg: 0 };
+    let lastRatio = null;
+    for (let i = TORSO.length - 1; i >= 0; i--) {
+      const row = TORSO[i], y = row[0];
+      if (y > 1.3 || y < .84) continue;
+      const c = sliceClusters(M, y).find((k) => k.x0 < 0 && k.x1 > 0);
+      if (c && c.rx > .06 && c.rx < .24) { lastRatio = [c.rx / row[1], c.rz / row[2]]; TORSO[i] = [y, c.rx, c.rz, c.cz]; fitted.torso++; }
+    }
+    if (lastRatio) TORSO.forEach((row, i) => { if (row[0] > 1.3) TORSO[i] = [row[0], row[1] * lastRatio[0], row[2] * lastRatio[1], row[3]]; });
+    ARM.forEach((row, i) => {
+      const side = sliceClusters(M, row[0]).filter((k) => Math.abs(k.cx) > .1 && k.rx < .07);
+      if (side.length >= 2) { const m = (f) => side.reduce((s, k) => s + f(k), 0) / side.length;
+        ARM[i] = [row[0], m((k) => Math.abs(k.cx)), m((k) => k.cz), m((k) => Math.max(k.rx, k.rz))]; fitted.arm++; }
+    });
+    LEG.forEach((row, i) => {
+      const legs = sliceClusters(M, row[0]).filter((k) => Math.abs(k.cx) > .015 && Math.abs(k.cx) < .2 && k.rx < .12);
+      if (legs.length === 2) { const m = (f) => (f(legs[0]) + f(legs[1])) / 2;
+        LEG[i] = [row[0], m((k) => Math.abs(k.cx)), m((k) => k.cz), m((k) => Math.max(k.rx, k.rz))]; fitted.leg++; }
+    });
+    return fitted;
+  }
+
+  async function loadAvatar(url) {
+    const res = await fetch(url, { cache: "no-cache" });
+    if (!res.ok) throw new Error(`no avatar file (${res.status})`);
+    const { g, bin } = parseGLB(await res.arrayBuffer());
+    const prims = primitives(g, bin);
+    if (!prims.length) throw new Error("GLB has no meshes");
+    const body = prims.reduce((a, b) => (b.pos.length > a.pos.length ? b : a));
+    // normalise: feet on the floor, centred, 1.69 m tall (whatever units the export used)
+    let y0 = 1e9, y1 = -1e9;
+    for (let i = 1; i < body.pos.length; i += 3) { y0 = Math.min(y0, body.pos[i]); y1 = Math.max(y1, body.pos[i]); }
+    const s = AV_HEIGHT / (y1 - y0);
+    let cx = 0, cz = 0, n = 0;
+    for (let i = 0; i < body.pos.length; i += 3) { const yy = (body.pos[i + 1] - y0) * s; if (yy > .85 && yy < 1.2) { cx += body.pos[i]; cz += body.pos[i + 2]; n++; } }
+    cx /= n || 1; cz /= n || 1;
+    prims.forEach((p) => { for (let i = 0; i < p.pos.length; i += 3) { p.pos[i] = (p.pos[i] - cx) * s; p.pos[i + 1] = (p.pos[i + 1] - y0) * s; p.pos[i + 2] = (p.pos[i + 2] - cz) * s; } });
+    // images -> bitmaps; average skin colour of the body texture (so skin tones can be tinted)
+    const bitmaps = await Promise.all((g.images || []).map(async (im) => {
+      const bv = g.bufferViews[im.bufferView];
+      return createImageBitmap(new Blob([bin.slice(bv.byteOffset || 0, (bv.byteOffset || 0) + bv.byteLength)], { type: im.mimeType || "image/jpeg" }));
+    }));
+    let skinAvg = body.color;
+    if (body.tex !== undefined && bitmaps[body.tex]) {
+      const c = new OffscreenCanvas(32, 32).getContext("2d"); c.drawImage(bitmaps[body.tex], 0, 0, 32, 32);
+      const d = c.getImageData(0, 0, 32, 32).data; let r = 0, gg = 0, b = 0, k = 0;
+      for (let i = 0; i < d.length; i += 4) if (d[i + 3] > 200 && d[i] + d[i + 1] + d[i + 2] > 120) { r += d[i]; gg += d[i + 1]; b += d[i + 2]; k++; }
+      if (k) skinAvg = [r / k / 255, gg / k / 255, b / k / 255].map((v, i) => v * body.color[i]);
+    }
+    const fitted = fitProfiles(body);
+    // head: fit the lobby's hair to it unless the export brings its own
+    const top = AV_HEIGHT;
+    const fore = sliceClusters(body, top - .06).find((k) => k.x0 < 0 && k.x1 > 0);
+    const eye = sliceClusters(body, top - .11).find((k) => k.x0 < 0 && k.x1 > 0);
+    const hs = (fore ? fore.rx / .0698 : 1) * 1.05;                         // .0698 = procedural head half-width there; +5% so the hair sits on, not in, a sculpted head
+    const anchor = [0, 1.688, .008], at = [fore ? fore.cx : 0, top, eye ? eye.cz : .008];
+    const headXf = [hs, at[0] - hs * anchor[0], at[1] - hs * anchor[1], at[2] - hs * anchor[2]];
+    const hasHair = prims.some((p) => p !== body && /hair|ponytail|bob|braid/i.test(p.name));
+    prims.forEach((p) => {
+      p.role = p === body ? "skin" : p.alphaMode !== "OPAQUE" || /brow|lash|hair/i.test(p.name) ? "alpha" : "part";
+      p.hair = p !== body && /hair|ponytail|bob|braid/i.test(p.name);
+    });
+    console.info(`Uniqo avatar: ${prims.length} meshes, body ${body.pos.length / 3} verts, refit torso ${fitted.torso} / arms ${fitted.arm} / legs ${fitted.leg} rows, head xf ${headXf.map((v) => v.toFixed(3))}`);
+    return { prims, bitmaps, skinAvg, headXf, hasHair, fitted };
+  }
+  const getAvatar = (url) => (avatarPromise ??= loadAvatar(url).catch((e) => { console.info("Uniqo avatar not used:", e.message); return null; }));
 
   /* A faceless, boutique-mannequin head: an oval that tapers to a soft chin, with the
      brow, nose, cheekbones, lips and chin sculpted into the surface (no painted features).
@@ -190,7 +362,7 @@ const UQ3D = (() => {
   const effLen = (sil, l) => (sil === "saree" ? "floor" : sil === "lehenga" && (l === "knee" || l === "midi") ? "ankle" : l);
 
   /* build every mesh for a look: [{geo, mat}] */
-  function build(L, cfg) {
+  function build(L, cfg, av) {
     const out = [];
     const fx = FAB[L.fab] || FAB.cotton;
     const fabStats = (cfg && cfg.fabrics.find((f) => f.key === L.fab)) || { stats: { drape: 3 } };
@@ -206,9 +378,9 @@ const UQ3D = (() => {
 
     /* --- body */
     add({ shadow: true, ...loft([0, .12, .22, .3, .36].map((r) => ({ y: .002, rx: r * 1.2, rz: r * .62 })), { seg: 40 }) }, { kind: 4 });
-    add(loft(TORSO.map(([y, rx, rz, cz]) => ({ y, rx, rz, cz }))), { kind: 0, color: skin });
-    add(loft([[1.49, .044], [1.44, .045], [1.39, .05], [1.372, .056]].map(([y, r]) => ({ y, rx: r, rz: r * .95, cz: -.004 }))), { kind: 0, color: skin });
-    [1, -1].forEach((side) => {
+    if (!av) add(loft(TORSO.map(([y, rx, rz, cz]) => ({ y, rx, rz, cz }))), { kind: 0, color: skin });
+    if (!av) add(loft([[1.49, .044], [1.44, .045], [1.39, .05], [1.372, .056]].map(([y, r]) => ({ y, rx: r, rz: r * .95, cz: -.004 }))), { kind: 0, color: skin });
+    if (!av) [1, -1].forEach((side) => {
       add(loft(mirrorRings(ARM.map(([y, cx, cz, r]) => ({ y, cx, cz, rx: r, rz: r })), side), { seg: 24 }), { kind: 0, color: skin });
       add(loft(mirrorRings([[.85, .225, .03, .021], [.81, .228, .033, .028], [.77, .23, .036, .026], [.735, .231, .038, .014], [.725, .231, .038, .001]]
         .map(([y, cx, cz, r]) => ({ y, cx, cz, rx: r * .6, rz: r })), side), { seg: 18 }), { kind: 0, color: skin });
@@ -219,28 +391,32 @@ const UQ3D = (() => {
         mannequin ? { kind: 3, color: acc } : { kind: 0, color: [.95, .93, .89], spec: .25 });
     });
     if (mannequin) {
-      add(loft(ellipsoid([0, 1.535, 0], .036, .036, .036, 12)), { kind: 3, color: acc });
+      if (!av) add(loft(ellipsoid([0, 1.535, 0], .036, .036, .036, 12)), { kind: 3, color: acc });
     } else {
       const HAIR = [.13, .085, .06];                                       // deep espresso brown
-      add(headGeo(), { kind: 0, color: skin, face: 1 });
-      [1, -1].forEach((s) => add(loft(ellipsoid([.083 * s, 1.568, -.004], .009, .026, .016, 12)), { kind: 0, color: skin }));   // ears
-      add(loft(ellipsoid([0, 1.594, -.012], .1, .132, .117, 24)), { kind: 1, color: HAIR });   // crown with volume, centre parting
-      add(loft(ellipsoid([0, 1.622, -.108], .046, .03, .032, 14)), { kind: 1, color: [.12, .078, .055] });     // half-up twist
+      const hx = av ? { xf: av.headXf } : {};                              // fit the hair to an exported head
+      const withHair = !av || !av.hasHair;
+      if (!av) {
+        add(headGeo(), { kind: 0, color: skin, face: 1 });
+        [1, -1].forEach((s) => add(loft(ellipsoid([.083 * s, 1.568, -.004], .009, .026, .016, 12)), { kind: 0, color: skin }));   // ears
+      }
+      if (withHair) add(loft(ellipsoid([0, 1.594, -.012], .1, .132, .117, 24)), { kind: 1, color: HAIR, ...hx });   // crown with volume, centre parting
+      if (withHair) add(loft(ellipsoid([0, 1.622, -.108], .046, .03, .032, 14)), { kind: 1, color: [.12, .078, .055], ...hx });     // half-up twist
       // long wavy curtain down the back to the waist
       const curtain = [[1.612, .07, .085, -.06], [1.6, .095, .112, -.02], [1.575, .1, .118, -.008], [1.53, .1, .115, -.01], [1.47, .112, .112, -.028],
         [1.42, .15, .12, -.04], [1.36, .175, .13, -.045], [1.3, .178, .14, -.045], [1.22, .172, .15, -.04], [1.14, .16, .145, -.045], [1.06, .15, .135, -.05], [1.0, .14, .125, -.055]];
-      add(loft(curtain.map(([y, rx, rz, cz]) => ({ y, rx, rz, cz })), {
+      if (withHair) add(loft(curtain.map(([y, rx, rz, cz]) => ({ y, rx, rz, cz })), {
         seg: 72, ripple: (th, t) => (t > .3 ? .05 * (t - .3) * Math.sin(th * 16 + t * 14) : 0) + .02 * t * Math.sin(th * 29 - t * 20),
-      }), { kind: 6, color: HAIR, alpha: .99 });
+      }), { kind: 6, color: HAIR, alpha: .99, ...hx });
       // soft strands framing the face: a fine wisp along each cheek, and a fuller lock that falls over the shoulder
-      [1, -1].forEach((s) => {
+      if (withHair) [1, -1].forEach((s) => {
         const wisp = [[.06, 1.64, .072], [.086, 1.585, .058], [.093, 1.53, .046], [.097, 1.47, .036], [.11, 1.41, .042], [.13, 1.35, .078], [.14, 1.29, .102]];
         const lock = [[.075, 1.645, .03], [.094, 1.575, .02], [.102, 1.5, .02], [.117, 1.43, .032], [.142, 1.36, .088], [.149, 1.29, .117], [.141, 1.22, .132], [.131, 1.16, .126]];
         const wave = (pts, k) => pts.map(([x, y, z], i) => [(x + (i % 2 ? k : -k / 2)) * s, y, z]);
-        add(ribbon(spline(wave(wisp, .004), 6), (t) => .04 - .016 * t), { kind: 6, color: HAIR, lock: 1, alpha: .98 });
-        add(ribbon(spline(wave(lock, .007), 6), (t) => .066 - .03 * t), { kind: 6, color: HAIR, lock: 1, alpha: .98 });
+        add(ribbon(spline(wave(wisp, .004), 6), (t) => .04 - .016 * t), { kind: 6, color: HAIR, lock: 1, alpha: .98, ...hx });
+        add(ribbon(spline(wave(lock, .007), 6), (t) => .066 - .03 * t), { kind: 6, color: HAIR, lock: 1, alpha: .98, ...hx });
       });
-      [1, -1].forEach((s) => add(loft(ellipsoid([.087 * s, 1.546, -.002], .003, .004, .003, 8)), { kind: 3, color: [.83, .66, .36] }));   // tiny studs
+      if (!av) [1, -1].forEach((s) => add(loft(ellipsoid([.087 * s, 1.546, -.002], .003, .004, .003, 8)), { kind: 3, color: [.83, .66, .36] }));   // tiny studs
       // fine gold chain resting at the base of the neck
       const chain = [];
       for (let k = 0; k <= 48; k++) {
@@ -261,7 +437,7 @@ const UQ3D = (() => {
       for (let y = .86; y > yEnd + .02; y -= .06) rows.push(y);              // long kurta: smooth fall
       rows.push(yEnd);
       return rows.map((y) => {
-        const t = y < .86 ? { rx: .172, rz: .118, cz: -.018 } : torsoAt(y);
+        const t = y < .86 ? HIP() : torsoAt(y);
         const k = y < .92 ? Math.min(1, (.92 - y) / .25) : 0;               // kurta: falls straight below the hip
         return { y, rx: lerp(t.rx, .178, k) + E + extra, rz: lerp(t.rz, .124, k) + E + extra, cz: t.cz };
       });
@@ -288,7 +464,7 @@ const UQ3D = (() => {
       const rings = [];
       for (let i = 0; i < N; i++) {
         const t = i / (N - 1), y = waist + .012 - (span + .012) * t;
-        const tb = y > .86 ? torsoAt(y) : { rx: .172, rz: .118, cz: -.018 };
+        const tb = y > .86 ? torsoAt(y) : HIP();
         let rx = L.sil === "sheath"
           ? (y > .9 ? tb.rx + E : lerp(.172 + E, .15, Math.min(1, (.9 - y) / Math.max(.05, .9 - y1))))
           : lerp(w0.rx + E + .004, hw, Math.pow(t, pw));
@@ -362,12 +538,12 @@ const UQ3D = (() => {
   /* ------------------------------------------------------------------ shaders */
   const VS = `#version 300 es
 in vec3 aPos; in vec3 aNor; in vec4 aUv;
-uniform mat4 uProj, uView; uniform float uYaw;
+uniform mat4 uProj, uView; uniform float uYaw; uniform vec4 uXf;
 out vec3 vWorld; out vec3 vNor; out vec4 vUv; out vec3 vLocal;
 void main(){
   float c = cos(uYaw), s = sin(uYaw);
   mat3 R = mat3(c, 0., -s, 0., 1., 0., s, 0., c);
-  vec3 p = R * aPos;
+  vec3 p = R * (aPos * uXf.x + uXf.yzw);       // uXf: per-mesh scale + offset (hair fitted to a head)
   vWorld = p; vLocal = aPos; vNor = R * aNor; vUv = aUv;
   gl_Position = uProj * uView * vec4(p, 1.);
 }`;
@@ -378,6 +554,7 @@ uniform vec3 uCam, uColor, uAccent;
 uniform int uKind, uTex, uNeck;
 uniform float uSheen, uPower, uAlpha, uSpec, uNeckTop, uPearlTop, uPearlBottom, uHem, uLen, uSlit, uPocket, uBodice, uFlat, uBorder, uFace, uLock;
 uniform float uEmb[6];
+uniform sampler2D uTex0; uniform float uUseTex; uniform vec3 uTint;
 out vec4 frag;
 float hash(vec2 p){ p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
 float neckDepth(float a){
@@ -427,6 +604,12 @@ void main(){
   }
   if (uKind == 0) { spec = max(spec, .07); power = 14.; rim = .16; }
   if (uKind == 3) { metal = 1.; alb = uColor; }
+  if (uKind == 7 || uKind == 8) {                    // exported body: textured skin, eyes, brows, lashes
+    vec4 tx = uUseTex > .5 ? texture(uTex0, vUv.xy) : vec4(1.);
+    alb = tx.rgb * uColor * uTint;
+    if (uKind == 8) { alpha = tx.a; if (alpha < .3) discard; }
+    spec = uKind == 7 ? .08 : .03; power = 16.; rim = .14;
+  }
   if (uKind == 2) {
     alpha = uAlpha; spec = uSheen * .7; power = uPower; rim = uSheen * .55 + .08;
     if (uBodice > .5) {
@@ -521,10 +704,59 @@ void main(){
     }
     function free() { meshes.forEach((m) => { gl.deleteVertexArray(m.vao); m.bufs.forEach((b) => gl.deleteBuffer(b)); }); meshes = []; }
 
+    /* exported body: uploaded once, drawn with every look */
+    let avatar = null, avMeshes = [], lastLook = null, look = { skin: null };
+    function uploadAvatar(av) {
+      const texs = av.bitmaps.map((bm) => {
+        const t = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, t);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, bm);
+        gl.generateMipmap(gl.TEXTURE_2D);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+        return t;
+      });
+      return av.prims.map((p) => {
+        const vao = gl.createVertexArray(); gl.bindVertexArray(vao);
+        const bufs = [[p.pos, 3], [p.nor, 3], [p.uv, 2]].map(([data, size], loc) => {
+          const b = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, b); gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
+          gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, size, gl.FLOAT, false, 0, 0); return b;
+        });
+        const ib = gl.createBuffer(); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ib); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, p.idx, gl.STATIC_DRAW);
+        gl.bindVertexArray(null);
+        return { vao, bufs: [...bufs, ib], count: p.idx.length, itype: gl.UNSIGNED_INT, avatar: p.role, hair: p.hair,
+          tex: p.tex !== undefined ? texs[p.tex] : null, mat: { kind: p.role === "alpha" ? 8 : 7, color: p.color, alpha: 1 } };
+      }).concat([{ textures: texs }]);
+    }
+    if (opts.avatarUrl) getAvatar(opts.avatarUrl).then((av) => {
+      if (!av || !alive) return;
+      try { avMeshes = uploadAvatar(av); avatar = av; if (lastLook) setLook(...lastLook); opts.onAvatar && opts.onAvatar(av); }
+      catch (e) { console.info("Uniqo avatar not used:", e.message); avMeshes = []; avatar = null; }
+    });
+
     function setLook(L, cfg) {
       free();
-      meshes = build(L, cfg).map(({ geo, mat }) => ({ ...upload(geo), mat, shadow: !!geo.shadow }));
+      lastLook = [L, cfg];
+      look = { skin: L.skin === "mannequin" ? null : hexRgb(L.skin) };
+      meshes = build(L, cfg, avatar).map(({ geo, mat }) => ({ ...upload(geo), mat, shadow: !!geo.shadow }));
       wobble = .16;
+    }
+    // what to draw for the exported body under the current look
+    function avatarDrawList() {
+      if (!avatar) return [];
+      const list = [];
+      avMeshes.forEach((m) => {
+        if (!m.vao) return;
+        if (!look.skin) {                                                  // atelier mannequin: dark body only
+          if (m.avatar === "skin") list.push({ ...m, tex: null, mat: { kind: 0, color: hexRgb("#2a2420"), alpha: 1 } });
+          return;
+        }
+        if (m.avatar === "skin" && !m.tex) list.push({ ...m, mat: { kind: 0, color: look.skin, alpha: 1 } });   // untextured body: the doll's own skin shading
+        else if (m.avatar === "skin") {
+          const tint = look.skin.map((c, i) => Math.max(.25, Math.min(2.4, c / Math.max(.05, avatar.skinAvg[i]))));
+          list.push({ ...m, mat: { ...m.mat, tint } });
+        } else list.push(m);
+      });
+      return list;
     }
 
     function resize() {
@@ -554,7 +786,9 @@ void main(){
       gl.uniformMatrix4fv(u("uProj"), false, perspective(fovy, aspect, .1, 20));
       gl.uniformMatrix4fv(u("uView"), false, lookAt(cam, [0, .86, 0], [0, 1, 0]));
       gl.uniform3fv(u("uCam"), cam);
-      const pass = (transparent) => meshes.forEach((m) => {
+      gl.uniform1i(u("uTex0"), 0); gl.activeTexture(gl.TEXTURE0);
+      const all = avatarDrawList().concat(meshes);
+      const pass = (transparent) => all.forEach((m) => {
         const M = m.mat, a = M.alpha ?? 1;
         if (m.shadow ? transparent : (a < .99) !== transparent) return;
         gl.uniform1f(u("uYaw"), m.shadow ? 0 : shownYaw);
@@ -570,7 +804,10 @@ void main(){
         gl.uniform1f(u("uPocket"), M.pocket ?? 0); gl.uniform1f(u("uBodice"), M.bodice ?? 0); gl.uniform1f(u("uFlat"), M.flat ?? 0);
         gl.uniform1f(u("uBorder"), M.border ?? 0); gl.uniform1f(u("uFace"), M.face ?? 0); gl.uniform1f(u("uLock"), M.lock ?? 0);
         gl.uniform1fv(u("uEmb[0]"), M.emb || [0, 0, 0, 0, 0, 0]);
-        gl.bindVertexArray(m.vao); gl.drawElements(gl.TRIANGLES, m.count, gl.UNSIGNED_SHORT, 0);
+        gl.uniform4fv(u("uXf"), M.xf || [1, 0, 0, 0]);
+        gl.uniform3fv(u("uTint"), M.tint || [1, 1, 1]);
+        gl.uniform1f(u("uUseTex"), m.tex ? 1 : 0); gl.bindTexture(gl.TEXTURE_2D, m.tex || null);
+        gl.bindVertexArray(m.vao); gl.drawElements(gl.TRIANGLES, m.count, m.itype || gl.UNSIGNED_SHORT, 0);
       });
       gl.depthMask(true); pass(false);
       gl.depthMask(false); pass(true); gl.depthMask(true);
@@ -587,7 +824,12 @@ void main(){
     return {
       setLook,
       flip() { flip = { from: yaw, to: (Math.round(yaw / Math.PI) + 1) * Math.PI, t0: performance.now() }; idleAt = performance.now(); }, // turn to the other side
-      destroy() { alive = false; cancelAnimationFrame(raf); ro.disconnect(); free(); canvas.remove(); },
+      destroy() {
+        alive = false; cancelAnimationFrame(raf); ro.disconnect(); free();
+        avMeshes.forEach((m) => { if (m.vao) { gl.deleteVertexArray(m.vao); m.bufs.forEach((b) => gl.deleteBuffer(b)); } (m.textures || []).forEach((t) => gl.deleteTexture(t)); });
+        canvas.remove();
+      },
+      get hasAvatar() { return !!avatar; },
     };
   }
 

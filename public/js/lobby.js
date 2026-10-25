@@ -169,6 +169,7 @@
     try {
       $("avatar").innerHTML = "";
       g3 = UQ3D.mount($("avatar"), {
+        avatarUrl: "/assets/avatar/uniqo-body.glb",   // exported base body (docs/AVATAR_EXPORT.md); falls back to the built-in avatar
         onView: setViewLabel,
         onFail: () => { g3 = null; mode3d = false; toast("3D view isn't available on this device, so we're showing 2D."); renderStage("pop"); },
       });
