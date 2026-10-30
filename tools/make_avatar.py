@@ -1,7 +1,7 @@
 """Build the lobby's base body with MPFB2 and export it as public/assets/avatar/uniqo-body.glb.
 
 Run headless (Blender 4.2+ with the MPFB extension installed):
-    blender --background --python tools/make_avatar.py [-- out.glb]
+    blender --background --python tools/make_avatar.py [-- out.glb] [--garments [anarkali-floor,sleeves,...]]
     (install MPFB once with: blender --online-mode -c extension install mpfb --enable)
 
 The body is MPFB's CC0 base mesh: female, ~25, standing with the arms ~22 degrees from the
@@ -12,7 +12,8 @@ import bpy, addon_utils
 from mathutils import Vector
 
 ARM_ANGLE = 22.0                                  # degrees between the upper arm and the body
-OUT = sys.argv[sys.argv.index("--") + 1] if "--" in sys.argv[:-1] else os.path.join(
+ARGS = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
+OUT = ARGS[0] if ARGS and ARGS[0].endswith(".glb") else os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "public", "assets", "avatar", "uniqo-body.glb")
 
 addon_utils.enable("bl_ext.blender_org.mpfb", default_set=True)
@@ -20,10 +21,18 @@ from bl_ext.blender_org.mpfb.services.humanservice import HumanService      # no
 from bl_ext.blender_org.mpfb.services.targetservice import TargetService    # noqa: E402
 
 bpy.ops.wm.read_factory_settings(use_empty=True)
-macros = {"gender": 0.0, "age": 0.5, "muscle": 0.5, "weight": 0.45, "proportions": 0.85, "height": 0.5,
-          "cupsize": 0.5, "firmness": 0.5, "race": {"asian": 0.6, "caucasian": 0.3, "african": 0.1}}
+# proportions follow the brand's reference turnaround: a young, curvy figure - full bust, defined
+# waist, wide hips and a rounded seat, fuller thighs, long legs, soft shoulders and a round face
+macros = {"gender": 0.0, "age": 0.44, "muscle": 0.42, "weight": 0.6, "proportions": 0.9, "height": 0.5,
+          "cupsize": 0.68, "firmness": 0.62, "race": {"asian": 0.45, "caucasian": 0.5, "african": 0.05}}
+SHAPE = {"measure-waist-circ-decr": .35, "measure-hips-circ-incr": .2, "buttocks-volume-incr": .25,
+         "l-upperleg-fat-incr": .15, "r-upperleg-fat-incr": .15, "stomach-pregnant-decr": .4, "measure-shoulder-dist-decr": .25,
+         "upperlegs-height-incr": .35, "lowerlegs-height-incr": .2, "measure-neck-height-decr": .2, "head-round": .45, "head-fat-incr": .2,
+         "l-cheek-volume-incr": .35, "r-cheek-volume-incr": .35, "chin-width-decr": .2}
 body = HumanService.create_human(macro_detail_dict=macros)                     # keeps the joint-* helpers the rig is fitted from
 body.name = "UniqoBody"
+for name, w in SHAPE.items():
+    TargetService.load_target(body, TargetService.target_full_path(name), weight=w, name=name)
 
 # pose the arms down to ARM_ANGLE with the default rig, then bake the pose into the mesh
 rig = HumanService.add_builtin_rig(body, "default", import_weights=True)
@@ -52,9 +61,6 @@ TargetService.bake_targets(body)
 for m in list(body.modifiers):
     bpy.ops.object.modifier_apply(modifier=m.name)
 body.parent = None
-bpy.data.objects.remove(rig)
-for vg in list(body.vertex_groups):
-    body.vertex_groups.remove(vg)
 
 # soften the anatomical detail at the bust apex so sheer fabrics stay tasteful (local Laplacian smoothing)
 me = body.data
@@ -71,6 +77,16 @@ for sx in (1, -1):
         for i, w in sel.items():
             me.vertices[i].co = me.vertices[i].co.lerp(new[i], .6 * min(1, w * 1.6))
 me.update()
+
+# tailor and drape the garments while the rig and skin weights are still here (slow: cloth simulation)
+if "--garments" in sys.argv:
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import garments
+    only = sys.argv[sys.argv.index("--garments") + 1].split(",") if len(sys.argv) > sys.argv.index("--garments") + 1 else None
+    garments.build_all(body, rig, os.path.join(os.path.dirname(OUT), "garments"), only)
+bpy.data.objects.remove(rig)
+for vg in list(body.vertex_groups):
+    body.vertex_groups.remove(vg)
 
 # one plain skin material (the lobby tints it to the chosen skin tone)
 body.data.materials.clear()

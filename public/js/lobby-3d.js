@@ -186,6 +186,7 @@ const UQ3D = (() => {
         const P = readAccessor(g, bin, p.attributes.POSITION), cnt = P.length / 3;
         const Nn = p.attributes.NORMAL !== undefined ? readAccessor(g, bin, p.attributes.NORMAL) : null;
         const UV = p.attributes.TEXCOORD_0 !== undefined ? readAccessor(g, bin, p.attributes.TEXCOORD_0) : new Float64Array(cnt * 2);
+        const UV1 = p.attributes.TEXCOORD_1 !== undefined ? readAccessor(g, bin, p.attributes.TEXCOORD_1) : null;
         const idx = p.indices !== undefined ? Uint32Array.from(readAccessor(g, bin, p.indices)) : Uint32Array.from({ length: cnt }, (_, i) => i);
         const pos = new Float32Array(cnt * 3), nor = new Float32Array(cnt * 3);
         for (let k = 0; k < cnt; k++) {
@@ -204,7 +205,7 @@ const UQ3D = (() => {
         }
         const mat = p.material !== undefined ? g.materials[p.material] : {};
         const pbr = mat.pbrMetallicRoughness || {};
-        out.push({ name: (n.name || "") + " " + (g.meshes[n.mesh].name || "") + " " + (mat.name || ""), pos, nor, uv: Float32Array.from(UV), idx,
+        out.push({ name: (n.name || "") + " " + (g.meshes[n.mesh].name || "") + " " + (mat.name || ""), pos, nor, uv: Float32Array.from(UV), uv1: UV1 && Float32Array.from(UV1), idx,
           color: (pbr.baseColorFactor || [1, 1, 1, 1]).slice(0, 3), alphaMode: mat.alphaMode || "OPAQUE",
           tex: pbr.baseColorTexture ? g.textures[pbr.baseColorTexture.index].source : undefined });
       });
@@ -214,8 +215,8 @@ const UQ3D = (() => {
     return out;
   }
 
-  /* horizontal cross-section of the body (plane y cut through its triangles), split into torso/limbs by gaps along x */
-  function sliceClusters(M, y, gap = .016) {
+  /* horizontal cross-section of the body (plane y cut through its triangles): outline points [x, z], sorted by x */
+  function slicePoints(M, y) {
     const P = M.pos, I = M.idx, pts = [];
     for (let t = 0; t < I.length; t += 3) for (let e = 0; e < 3; e++) {
       const a = I[t + e] * 3, b = I[t + (e + 1) % 3] * 3, ya = P[a + 1], yb = P[b + 1];
@@ -223,7 +224,10 @@ const UQ3D = (() => {
       const f = (y - ya) / (yb - ya);
       pts.push([P[a] + (P[b] - P[a]) * f, P[a + 2] + (P[b + 2] - P[a + 2]) * f]);
     }
-    pts.sort((a, b) => a[0] - b[0]);
+    return pts.sort((a, b) => a[0] - b[0]);
+  }
+  /* split a cross-section into torso/limbs by gaps along x; each part gets an ellipse that encloses it */
+  function clustersOf(pts, gap = .016) {
     const groups = []; let cur = [];
     for (const p of pts) { if (cur.length && p[0] - cur[cur.length - 1][0] > gap) { groups.push(cur); cur = []; } cur.push(p); }
     if (cur.length) groups.push(cur);
@@ -233,8 +237,49 @@ const UQ3D = (() => {
       const cx = (x0 + x1) / 2, cz = (z0 + z1) / 2, rx = Math.max((x1 - x0) / 2, 1e-4), rz = Math.max((z1 - z0) / 2, 1e-4);
       // grow the box-sized ellipse until it encloses every point (a bust sits in the box's corners)
       const k = Math.sqrt(c.reduce((m, [x, z]) => Math.max(m, ((x - cx) / rx) ** 2 + ((z - cz) / rz) ** 2), 1));
-      return { x0, x1, cx, cz, rx: rx * k, rz: rz * k };
+      return { x0, x1, cx, cz, rx: rx * k, rz: rz * k, pts: c };
     });
+  }
+  const sliceClusters = (M, y, gap) => clustersOf(slicePoints(M, y), gap);
+
+  /* garment rings -> grown until they enclose the body beneath them, so no skin breaks through.
+     "torso" rings take every body point within 20% outside them (an arm leaving an armhole stays out);
+     "limb" rings (sleeves, trouser legs) take the separate arm/leg they sit on. */
+  const LEVEL = .005;
+  function coverer(body) {
+    const levels = [];
+    for (let i = 0; i * LEVEL <= 1.5; i++) levels.push(slicePoints(body, i * LEVEL + 1e-4));
+    const parts = levels.map(() => null);
+    const clusters = (i) => (parts[i] ??= clustersOf(levels[i]));
+    const GAP = .008;                                                      // cloth clearance kept over the skin
+    const need = (r, mode) => {
+      const i = Math.max(0, Math.min(levels.length - 1, Math.round(r.y / LEVEL)));
+      const cx = r.cx || 0, cz = r.cz || 0, e = ([x, z]) => ((x - cx) / r.rx) ** 2 + ((z - cz) / r.rz) ** 2;
+      let pts;
+      if (mode === "limb") {
+        const own = clusters(i).filter((c) => !(c.x0 < 0 && c.x1 > 0) && e([c.cx, c.cz]) < 2.25);
+        pts = own.length ? own.flatMap((c) => c.pts) : levels[i].filter((p) => e(p) < 1.44 && Math.abs(p[0]) > Math.abs(cx) - r.rx * .5);
+      } else {                                                             // skip a hand or forearm hanging beside the hips
+        const arm = (c) => !(c.x0 < 0 && c.x1 > 0) && c.rx < .06 && Math.abs(c.cx) > .17;
+        pts = clusters(i).filter((c) => !arm(c)).flatMap((c) => c.pts).filter((p) => e(p) < 1.44 && (r.y < 1.2 || Math.abs(p[0] - cx) <= r.rx));   // above the armpit: no widening into the arm
+      }
+      const rxi = Math.max(r.rx - GAP, .004), rzi = Math.max(r.rz - GAP, .004);
+      const m = pts.reduce((a, [x, z]) => Math.max(a, ((x - cx) / rxi) ** 2 + ((z - cz) / rzi) ** 2), 0);
+      return m > 1 ? [rxi * Math.sqrt(m) + GAP, rzi * Math.sqrt(m) + GAP] : null;
+    };
+    const SLOPE = .45;                                                     // growth fades into the rings around it (metres of radius per metre of height)
+    return (rings, mode = "torso") => {
+      const grown = rings.map((r) => need(r, mode));
+      return rings.map((r) => {
+        let rx = r.rx, rz = r.rz;
+        grown.forEach((g, j) => {
+          if (!g) return;
+          const d = Math.abs(rings[j].y - r.y) * SLOPE;
+          rx = Math.max(rx, g[0] - d); rz = Math.max(rz, g[1] - d);
+        });
+        return rx === r.rx && rz === r.rz ? r : { ...r, rx, rz };
+      });
+    };
   }
 
   /* refit the torso, arm and leg profiles (and so every garment) to the measured body */
@@ -302,7 +347,42 @@ const UQ3D = (() => {
       p.hair = p !== body && /hair|ponytail|bob|braid/i.test(p.name);
     });
     console.info(`Uniqo avatar: ${prims.length} meshes, body ${body.pos.length / 3} verts, refit torso ${fitted.torso} / arms ${fitted.arm} / legs ${fitted.leg} rows, head xf ${headXf.map((v) => v.toFixed(3))}`);
-    return { prims, bitmaps, skinAvg, headXf, hasHair, fitted };
+    return { prims, bitmaps, skinAvg, headXf, hasHair, fitted, cover: coverer(body), norm: { s, y0, cx, cz } };
+  }
+  /* garments tailored and draped on this body in Blender (tools/garments.py): one .glb per silhouette and
+     length (bodice + skirt) and one with every sleeve style. Loaded on demand; a missing file keeps the
+     generated garment. */
+  const garmentLib = {}, garmentLoads = new Map();
+  function garmentParts(buf, N) {
+    const { g, bin } = parseGLB(buf), parts = {};
+    primitives(g, bin).forEach((p) => {
+      const n = p.pos.length / 3, uv = new Float32Array(n * 4), rad = new Float32Array(90);
+      const xr = new Float32Array(90), z0 = new Float32Array(90).fill(9), z1 = new Float32Array(90).fill(-9);
+      let total = 0, top = -1e9;
+      for (let k = 0; k < n; k++) {
+        const x = (p.pos[k * 3] - N.cx) * N.s, y = (p.pos[k * 3 + 1] - N.y0) * N.s, z = (p.pos[k * 3 + 2] - N.cz) * N.s;
+        p.pos[k * 3] = x; p.pos[k * 3 + 1] = y; p.pos[k * 3 + 2] = z;
+        // glTF stores v flipped (1 - v): undo it for both sets
+        uv[k * 4] = p.uv[k * 2]; uv[k * 4 + 1] = 1 - p.uv[k * 2 + 1];
+        uv[k * 4 + 2] = p.uv1 ? p.uv1[k * 2] : 0; uv[k * 4 + 3] = p.uv1 ? 1 - p.uv1[k * 2 + 1] : 0;
+        total = Math.max(total, uv[k * 4 + 3]); top = Math.max(top, y);
+        const b = Math.max(0, Math.min(89, Math.floor(y / .02)));
+        rad[b] = Math.max(rad[b], Math.hypot(x, z));                       // how far the cloth reaches, per 2 cm (dupatta clearance)
+        xr[b] = Math.max(xr[b], Math.abs(x)); z0[b] = Math.min(z0[b], z); z1[b] = Math.max(z1[b], z);
+      }
+      // ring(y, pad): an ellipse hugging this piece at height y (belts, waistbands)
+      const ring = (y, pad) => { const b = Math.max(0, Math.min(89, Math.floor(y / .02)));
+        return { y, rx: xr[b] + pad, rz: (z1[b] - z0[b]) / 2 + pad, cz: (z1[b] + z0[b]) / 2 }; };
+      parts[p.name.trim().split(" ")[0]] = { pos: p.pos, nor: p.nor, uv, idx: p.idx, total, top, rad, ring };
+    });
+    return parts;
+  }
+  function loadGarment(name, av) {
+    if (!garmentLoads.has(name)) garmentLoads.set(name, fetch(`/assets/avatar/garments/${name}.glb`, { cache: "no-cache" })
+      .then((r) => (r.ok ? r.arrayBuffer() : null))
+      .then((buf) => (garmentLib[name] = buf ? garmentParts(buf, av.norm) : false))
+      .catch((e) => { console.info("Uniqo garment not used:", name, e.message); return (garmentLib[name] = false); }));
+    return garmentLoads.get(name);
   }
   const getAvatar = (url) => (avatarPromise ??= loadAvatar(url).catch((e) => { console.info("Uniqo avatar not used:", e.message); return null; }));
 
@@ -375,6 +455,7 @@ const UQ3D = (() => {
     const E = 0.012;                                                       // cloth sits this far off the skin
     const fabric = (extra = {}) => ({ kind: 2, color: col, accent: acc, tex: fx.tex, sheen: fx.sheen, power: fx.power, alpha: 1, emb, ...extra });
     const add = (geo, mat) => out.push({ geo, mat });
+    const fit = av ? av.cover : (rings) => rings;                          // an exported body: every garment encloses it
 
     /* --- body */
     add({ shadow: true, ...loft([0, .12, .22, .3, .36].map((r) => ({ y: .002, rx: r * 1.2, rz: r * .62 })), { seg: 40 }) }, { kind: 4 });
@@ -444,16 +525,26 @@ const UQ3D = (() => {
     };
     const neckTop = 1.392;
     const top = [{ y: neckTop, rx: .068 + E, rz: .062 + E, cz: 0 }, ...torsoRingsTo(bodiceEnd)];
-    const bodiceGeo = loft(top);
+    const bodiceGeo = loft(fit(top));
     const nd = { round: .065, v: .17, sweetheart: .1, boat: .035, square: .12, mandarin: 0 }[L.neck] || .065;
     const bodiceMat = fabric({ bodice: 1, neck: NECK[L.neck] ?? 0, neckTop, pearlTop: neckTop - nd - .02, pearlBottom: Math.max(bodiceEnd, .95) + .02,
       hem: L.sil === "kurta" ? 1 : 0, len: bodiceGeo.total, slit: L.sil === "kurta" ? 1 : 0, alpha: 1 - sheer * .3 });
     let skirtGeo = null;
     let skirtR = () => 0;
+    const G = av && garmentLib[`${L.sil}-${len}`];                       // draped in Blender for this body, when available
 
-    if (L.sil === "kurta") {
-      [1, -1].forEach((s) => add(loft(mirrorRings([[.9, .075, .1], [.6, .088, .11], [.3, .094, .122], [.04, .1, .135]].map(([y, cx, r]) => ({ y, cx, cz: 0, rx: r, rz: r * .92 })), s), { seg: 28 }),
-        { kind: 2, color: hexRgb(L.col).map((c, i) => Math.min(1, c * (0.5 < (col[0] + col[1] + col[2]) / 3 ? .82 : 1.55))), accent: acc, tex: fx.tex, sheen: fx.sheen * .6, power: fx.power, alpha: 1, emb: [0, 0, 0, 0, 0, 0] }));
+    const trousers = () => [1, -1].forEach((s) => add(loft(fit(mirrorRings([[.9, .075, .1], [.6, .088, .11], [.3, .094, .122], [.04, .1, .135]].map(([y, cx, r]) => ({ y, cx, cz: 0, rx: r, rz: r * .92 })), s), "limb"), { seg: 28 }),
+      { kind: 2, color: hexRgb(L.col).map((c) => Math.min(1, c * (0.5 < (col[0] + col[1] + col[2]) / 3 ? .82 : 1.55))), accent: acc, tex: fx.tex, sheen: fx.sheen * .6, power: fx.power, alpha: 1, emb: [0, 0, 0, 0, 0, 0] }));
+    const seam = G && G.skirt ? G.skirt.top - .012 : waist;               // where the skirt meets the bodice
+
+    if (G && G.bodice && G.skirt) {
+      const borders = { lehenga: .14, saree: .055 }[L.sil] || 0;
+      add(G.skirt, fabric({ hem: 1, len: G.skirt.total, alpha: 1 - sheer * .22, border: borders, slit: L.sil === "kurta" ? 1 : 0 }));
+      skirtR = (y) => (y > seam ? 0 : G.skirt.rad[Math.max(0, Math.min(89, Math.floor(y / .02)))]);
+      if (L.sil === "kurta") trousers();
+      if (L.sil === "lehenga") { const r0 = G.skirt.ring(G.skirt.top - .005, .006), r1 = G.skirt.ring(G.skirt.top - .035, .008); add(loft([{ ...r0, y: G.skirt.top + .004 }, { ...r1, y: G.skirt.top - .03 }]), { kind: 3, color: acc }); }
+    } else if (L.sil === "kurta") {
+      trousers();
       skirtR = (y) => (y < KURTA_HEM[len] + .02 ? .14 : .19);
     } else {
       const y1 = HEM[len], N = 30;
@@ -472,6 +563,7 @@ const UQ3D = (() => {
         const rz = Math.max(rx * (L.sil === "sheath" ? .72 : .9), tb.rz + E + .004);
         rings.push({ y, rx, rz, cz: y > .86 ? tb.cz : -.018 });
       }
+      rings.splice(0, rings.length, ...fit(rings));
       const folds = { aline: [9, .055], anarkali: [24, .03], lehenga: [14, .065], saree: [26, .012], sheath: [0, 0] }[L.sil];
       skirtGeo = loft(rings, {
         seg: 96,
@@ -488,11 +580,16 @@ const UQ3D = (() => {
       add(skirtGeo, fabric({ hem: 1, len: skirtGeo.total, alpha: 1 - sheer * .22, pocket: pocketX, border: L.sil === "lehenga" ? .14 : L.sil === "saree" ? .055 : 0 }));
       if (L.sil === "lehenga") add(loft([{ y: waist + .02, rx: w0.rx + E + .006, rz: w0.rz + E + .006 }, { y: waist - .012, rx: w0.rx + E + .008, rz: w0.rz + E + .008 }]), { kind: 3, color: acc });
     }
-    add(bodiceGeo, bodiceMat);
+    if (G && G.bodice) {
+      // the draped bodice runs 4.5 cm up the neck (a mandarin collar); every other neckline starts at the neck base
+      const top = G.bodice.top - (L.neck === "mandarin" ? 0 : .045);
+      add(G.bodice, { ...bodiceMat, neckTop: top, pearlTop: top - nd - .02, len: G.bodice.total, hem: 0, slit: 0 });
+    } else add(bodiceGeo, bodiceMat);
 
     /* sleeves */
-    const end = SLEEVE_END[L.slv];
-    if (end) [1, -1].forEach((side) => {
+    const end = SLEEVE_END[L.slv], S = av && garmentLib.sleeves && garmentLib.sleeves["sleeve-" + L.slv];
+    if (S) add(S, fabric({ hem: 1, len: S.total, alpha: 1 - sheer * 1.25, cuff: 1 }));
+    else if (end) [1, -1].forEach((side) => {
       const ys = []; for (let y = 1.342; y > end; y -= .02) ys.push(y); ys.push(end);
       const n = ys.length;
       const rings = ys.map((y, i) => {
@@ -501,27 +598,33 @@ const UQ3D = (() => {
         const r = (a.r + .013) * flare + (y > 1.3 ? (y - 1.3) * .22 : 0);   // follows the shoulder, no pads
         return { y, cx: a.cx * side, cz: a.cz, rx: r, rz: r };
       });
-      const g = loft(rings, { seg: 28 });
+      const g = loft(fit(rings, "limb"), { seg: 28 });
       add(g, fabric({ hem: 1, len: g.total, alpha: 1 - sheer * 1.25, cuff: 1 }));
     });
 
     /* belt + collar */
-    if (L.belt && ["aline", "sheath", "kurta", "anarkali"].includes(L.sil)) {
+    if (L.belt && ["aline", "sheath", "kurta", "anarkali"].includes(L.sil) && G && G.skirt) {
+      const t = G.skirt.top, a = G.skirt.ring(t - .008, .007), b = G.skirt.ring(t - .04, .009);   // hug the skirt just below its seam
+      add(loft([{ ...a, y: t + .006 }, { ...b, y: t - .034 }], { seg: 48 }), { kind: 3, color: acc });
+    } else if (L.belt && ["aline", "sheath", "kurta", "anarkali"].includes(L.sil)) {
       const t = torsoAt(waist);
       add(loft([{ y: waist + .02, rx: t.rx + E + .007, rz: t.rz + E + .007 }, { y: waist - .02, rx: t.rx + E + .009, rz: t.rz + E + .009 }], { seg: 48 }), { kind: 3, color: acc });
     }
-    if (L.neck === "mandarin" && !crop) add(loft([{ y: 1.43, rx: .053, rz: .051, cz: -.003 }, { y: 1.385, rx: .061, rz: .058, cz: -.002 }], { seg: 36 }), fabric({ hem: 0, len: .05 }));
+    if (L.neck === "mandarin" && !crop && !G) add(loft([{ y: 1.43, rx: .053, rz: .051, cz: -.003 }, { y: 1.385, rx: .061, rz: .058, cz: -.002 }], { seg: 36 }), fabric({ hem: 0, len: .05 }));
 
     /* saree pallu / dupatta: strips of cloth that clear the skirt */
     const clear = (p) => {
       const r = skirtR(p[1]);
-      if (r && p[1] < waist) {
+      if (r && p[1] < seam) {
         const d = Math.hypot(p[0], p[2] * 1.1);
         if (d < r + .03) { const k = (r + .03) / (d || 1); return [p[0] * k, p[1], p[2] * k]; }
       }
       return p;
     };
-    const strip = (ctrl, w, alpha) => { const g = ribbon(spline(ctrl.map(clear), 8).map(clear), w); add(g, fabric({ hem: 1, len: g.total, alpha, ribbon: 1, color: shade(L.col, .08) })); };
+    // a draped bodice tells us where this body's shoulders are: lift the cloth's upper end to rest on them
+    const dS = G && G.bodice ? G.bodice.top - .045 - 1.385 : 0;
+    const lift = ([x, y, z]) => [x, y + dS * Math.min(1, Math.max(0, (y - 1.0) / .37)), z];
+    const strip = (ctrl, w, alpha) => { const g = ribbon(spline(ctrl.map(lift).map(clear), 8).map(clear), w); add(g, fabric({ hem: 1, len: g.total, alpha, ribbon: 1, color: shade(L.col, .08) })); };
     if (L.sil === "saree") {
       strip([[-.15, 1.372, .035], [-.075, 1.28, .128], [.02, 1.18, .142], [.1, 1.08, .128], [.16, 1.0, .09], [.19, .95, .03]], .17, 1 - sheer * .6);
       strip([[-.15, 1.378, 0], [-.17, 1.3, -.095], [-.19, 1.1, -.135], [-.2, .85, -.155], [-.2, .6, -.16]], .21, 1 - sheer * .6);
@@ -736,6 +839,9 @@ void main(){
     function setLook(L, cfg) {
       free();
       lastLook = [L, cfg];
+      if (avatar) [`${L.sil}-${effLen(L.sil, L.len)}`, "sleeves"].forEach((name) => {
+        if (!(name in garmentLib)) loadGarment(name, avatar).then((parts) => { if (parts && alive && lastLook) setLook(...lastLook); });
+      });
       look = { skin: L.skin === "mannequin" ? null : hexRgb(L.skin) };
       meshes = build(L, cfg, avatar).map(({ geo, mat }) => ({ ...upload(geo), mat, shadow: !!geo.shadow }));
       wobble = .16;
@@ -807,6 +913,7 @@ void main(){
         gl.uniform4fv(u("uXf"), M.xf || [1, 0, 0, 0]);
         gl.uniform3fv(u("uTint"), M.tint || [1, 1, 1]);
         gl.uniform1f(u("uUseTex"), m.tex ? 1 : 0); gl.bindTexture(gl.TEXTURE_2D, m.tex || null);
+        if (m.avatar) { gl.enable(gl.POLYGON_OFFSET_FILL); gl.polygonOffset(1.5, 4); } else gl.disable(gl.POLYGON_OFFSET_FILL);   // cloth wins depth ties with skin
         gl.bindVertexArray(m.vao); gl.drawElements(gl.TRIANGLES, m.count, m.itype || gl.UNSIGNED_SHORT, 0);
       });
       gl.depthMask(true); pass(false);
@@ -829,6 +936,7 @@ void main(){
         avMeshes.forEach((m) => { if (m.vao) { gl.deleteVertexArray(m.vao); m.bufs.forEach((b) => gl.deleteBuffer(b)); } (m.textures || []).forEach((t) => gl.deleteTexture(t)); });
         canvas.remove();
       },
+      setYaw(a) { yaw = a; vel = 0; flip = null; idleAt = Infinity; },  // hold a fixed angle (no idle sway) until dragged
       get hasAvatar() { return !!avatar; },
     };
   }
