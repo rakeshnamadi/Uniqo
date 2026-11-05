@@ -312,7 +312,7 @@ const UQLook = (() => {
     const notes = [];
     if ((fab.best || []).includes(L.sil)) notes.push({ t: "good", m: `Atelier favourite: ${fab.label} ${sil.label.toLowerCase()}.` });
     else notes.push({ t: "warn", m: `Bold pairing. Our stylist will advise on structure for ${fab.label.toLowerCase()} in a ${sil.label.toLowerCase()}.` });
-    if ((FX[L.fab] || {}).sheer >= 0.18 && !L.lining) notes.push({ t: "info", m: `${fab.label} is sheer. Add lining for full coverage.` });
+    if ((FX[L.fab] || {}).sheer >= 0.18 && !L.lining) notes.push({ t: "info", m: `${fab.label} is sheer: a slip covers the bust and hips, while the shoulders, sleeves and lower legs show through. Add full lining for more coverage.` });
     if (L.sil === "sheath" && fab.stats.stretch < 2) notes.push({ t: "info", m: "Non-stretch sheath: we add a concealed side zip for ease." });
     if (len !== L.len) notes.push({ t: "info", m: L.sil === "saree" ? "Sarees are always cut floor-length." : "Lehengas are cut ankle-length or longer." });
     if (L.pockets) notes.push({ t: "good", m: "Yes, real pockets. Deep enough for a phone." });

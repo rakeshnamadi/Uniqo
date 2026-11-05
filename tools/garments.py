@@ -112,7 +112,7 @@ def set_uvs(obj, uv_of):
             b.data[li].uv = (q[2], q[3])
 
 
-def cut_from_body(body, name, keep, gap, smooth=8):
+def cut_from_body(body, name, keep, gap, smooth=8, drape=False):
     """a new object made of the body faces where keep(face centroid, mean arm weight, verts) is true"""
     bm = bmesh.new()
     bm.from_mesh(body.obj.data)
@@ -129,6 +129,15 @@ def cut_from_body(body, name, keep, gap, smooth=8):
         bmesh.ops.smooth_vert(bm, verts=[v for v in bm.verts if not v.is_boundary], factor=.5,
                               use_axis_x=True, use_axis_y=True, use_axis_z=True)
         body.push_out(bm.verts, gap)
+    if drape:                                                            # cloth spans shapes rather than following each one: round the crests too
+        for _ in range(14):
+            bmesh.ops.smooth_vert(bm, verts=[v for v in bm.verts if not v.is_boundary], factor=.5,
+                                  use_axis_x=True, use_axis_y=True, use_axis_z=True)
+        for _ in range(4):
+            body.push_out(bm.verts, gap)
+            bmesh.ops.smooth_vert(bm, verts=[v for v in bm.verts if not v.is_boundary], factor=.25,
+                                  use_axis_x=True, use_axis_y=True, use_axis_z=True)
+        body.push_out(bm.verts, gap * .5)
     for _ in range(6):                                                   # tidy the cut edges into smooth curves
         for v in edge:
             nb = [e.other_vert(v) for e in v.link_edges if e.is_boundary]
@@ -147,7 +156,7 @@ def cut_from_body(body, name, keep, gap, smooth=8):
 def bodice(body, lm, end_y):
     top = lm["neck_base"] + .045                                         # the shader cuts each neckline below this
     zt, zw = body.z(top), body.z(end_y)
-    obj = cut_from_body(body, "bodice", lambda c, w, vs: w < .35 and zw < c.z < zt, gap=.004)
+    obj = cut_from_body(body, "bodice", lambda c, w, vs: w < .35 and zw < c.z < zt, gap=.006, smooth=26, drape=True)
     def uv(p):
         cy = body.centre_y(p.z)
         u = angle_u(p.x, p.y, cy)
@@ -193,7 +202,7 @@ def sleeves(body, kind):
     return obj
 
 
-def skirt(body, waist_y, hem_y, hem_half, *, frames=90, soft=.6, yoke_m=.07, sim=True, ease=.016):
+def skirt(body, waist_y, hem_y, hem_half, *, frames=90, soft=.6, yoke_m=.07, sim=True, ease=.016, mass=.25):
     """flared skirt pinned at the waist seam, draped by gravity"""
     seg, R = 128, 56
     hem_half /= body.k                                                   # lobby metres -> blender metres
@@ -211,7 +220,7 @@ def skirt(body, waist_y, hem_y, hem_half, *, frames=90, soft=.6, yoke_m=.07, sim
             q = Vector((p.x, p.y - cy, 0))
             if q.length > 1e-6 and q.normalized().dot(d) > math.cos(math.pi * 2.5 / seg):
                 best = max(best, q.length)
-        prof.append(best + .014)
+        prof.append(best + .011)
     prof = [(prof[j - 1] + 2 * prof[j] + prof[(j + 1) % seg]) / 4 for j in range(seg)]
     arm_pts = [(p.z, math.hypot(p.x, p.y - cy), math.atan2(p.x, -(p.y - cy))) for p, w in zip(body.co, body.armw) if w > .5]
     def inside_arms(z, th):
@@ -291,7 +300,7 @@ def skirt(body, waist_y, hem_y, hem_half, *, frames=90, soft=.6, yoke_m=.07, sim
         w = 1 - s_of[i] / max(yoke_m, .03)
         if w <= 0:
             break
-        pin.add(rows[i], w * .8, "REPLACE")                              # the yoke stays close to the body
+        pin.add(rows[i], math.sqrt(w), "REPLACE")                              # the yoke stays close to the body
     if not sim:
         obj.vertex_groups.clear()
         bpy.context.view_layer.objects.active = obj
@@ -309,7 +318,7 @@ def skirt(body, waist_y, hem_y, hem_half, *, frames=90, soft=.6, yoke_m=.07, sim
     cl = obj.modifiers.new("Cloth", "CLOTH")
     st = cl.settings
     st.quality = 8
-    st.mass = .25
+    st.mass = mass
     st.tension_stiffness = st.compression_stiffness = 12
     st.shear_stiffness = 6
     st.bending_stiffness = soft
@@ -336,8 +345,50 @@ def skirt(body, waist_y, hem_y, hem_half, *, frames=90, soft=.6, yoke_m=.07, sim
     return obj
 
 
-def export(objs, path):
+def bake_shadows(objs, body):
+    """fold shadows: how much open air each vertex sees, stored as a third UV set (TEXCOORD_2.x).
+    Valleys between folds, under the bust and where a sleeve meets the side all go darker."""
+    dirs = []
+    for i in range(18):                                                  # evenly spread over the sphere
+        z = 1 - 2 * (i + .5) / 18
+        a = i * 2.39996
+        r = math.sqrt(1 - z * z)
+        dirs.append(Vector((r * math.cos(a), r * math.sin(a), z)))
+    deps = bpy.context.evaluated_depsgraph_get()
+    trees = [body.bvh] + [BVHTree.FromObject(o, deps) for o in objs]
+    for o in objs:
+        me = o.data
+        ao = []
+        for v in me.vertices:
+            n = v.normal.copy()
+            if (v.co.x * n.x + v.co.y * n.y) < 0:                        # look outwards, away from the body
+                n = -n
+            seen = tot = 0
+            org = v.co + n * .004
+            for d in dirs:
+                c = d.dot(n)
+                if c <= .05:
+                    continue
+                tot += c
+                if not any(t.ray_cast(org, d, .14)[0] is not None for t in trees):
+                    seen += c
+            ao.append(seen / tot if tot else 1)
+        for _ in range(2):                                               # soften: this is light, not a stain
+            sm = [[x, 1.0] for x in ao]
+            for e in me.edges:
+                a, b = e.vertices
+                sm[a][0] += ao[b]; sm[a][1] += 1
+                sm[b][0] += ao[a]; sm[b][1] += 1
+            ao = [x / w for x, w in sm]
+        lay = me.uv_layers.new(name="UVAo")
+        for li, lo in enumerate(me.loops):
+            lay.data[li].uv = (ao[lo.vertex_index], 0)
+
+
+def export(objs, path, body=None):
     os.makedirs(os.path.dirname(path), exist_ok=True)
+    if body:
+        bake_shadows(objs, body)
     bpy.ops.object.select_all(action="DESELECT")
     for o in objs:
         o.select_set(True)
@@ -366,19 +417,29 @@ HEMS = {"knee": .48, "midi": .3, "ankle": .1, "floor": .03}
 KURTA_HEMS = {"knee": .52, "midi": .45, "ankle": .37, "floor": .3}       # a kurta's own hem; the trousers take the length
 
 
+# how the cloth's weight changes the drape: bending stiffness multiplier and mass. The lobby picks by fabric:
+# crisp = cotton, linen, denim; medium = rayon, crepe, chanderi, chikankari, silks; fluid = georgette, chiffon
+WEIGHTS = {"crisp": (3.2, .32), "": (1, .25), "fluid": (.22, .14)}
+
+
 def build_all(body_obj, rig, out_dir, only=None):
     body = Body(body_obj, rig)
     lm = body.landmarks()
     print("landmarks (lobby m):", {k: round(v, 3) for k, v in lm.items()})
     for sil, spec in SILS.items():
         for ln in spec["lens"]:
-            if only and f"{sil}-{ln}" not in only and sil not in only:
-                continue
-            hem_y = (KURTA_HEMS if sil == "kurta" else HEMS)[ln]
-            w = lm["waist"] + spec["waist"]
-            hem = spec["hem"] * (w - hem_y) / (w - .03) if sil not in ("sheath", "saree") else spec["hem"]
-            parts = [bodice(body, lm, lm["waist"] + spec["end"]),
-                     skirt(body, w, hem_y, hem, soft=spec["soft"], yoke_m=spec["yoke"], sim=spec.get("sim", True), ease=spec.get("ease", .016))]
-            export(parts, os.path.join(out_dir, f"{sil}-{ln}.glb"))
+            for wt, (stiff, mass) in WEIGHTS.items():
+                if wt and not spec.get("sim", True):                     # fitted pieces hardly move: one cut for all
+                    continue
+                name = f"{sil}-{ln}-{wt}" if wt else f"{sil}-{ln}"
+                if only and name not in only and sil not in only:
+                    continue
+                hem_y = (KURTA_HEMS if sil == "kurta" else HEMS)[ln]
+                w = lm["waist"] + spec["waist"]
+                hem = spec["hem"] * (w - hem_y) / (w - .03) if sil not in ("sheath", "saree") else spec["hem"]
+                parts = [bodice(body, lm, lm["waist"] + spec["end"]),
+                         skirt(body, w, hem_y, hem, soft=spec["soft"] * stiff, mass=mass, yoke_m=spec["yoke"],
+                               sim=spec.get("sim", True), ease=spec.get("ease", .016))]
+                export(parts, os.path.join(out_dir, name + ".glb"), body)
     if not only or "sleeves" in only:
-        export([sleeves(body, k) for k in ("cap", "elbow", "three", "full", "bell")], os.path.join(out_dir, "sleeves.glb"))
+        export([sleeves(body, k) for k in ("cap", "elbow", "three", "full", "bell")], os.path.join(out_dir, "sleeves.glb"), body)

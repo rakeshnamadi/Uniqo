@@ -187,6 +187,7 @@ const UQ3D = (() => {
         const Nn = p.attributes.NORMAL !== undefined ? readAccessor(g, bin, p.attributes.NORMAL) : null;
         const UV = p.attributes.TEXCOORD_0 !== undefined ? readAccessor(g, bin, p.attributes.TEXCOORD_0) : new Float64Array(cnt * 2);
         const UV1 = p.attributes.TEXCOORD_1 !== undefined ? readAccessor(g, bin, p.attributes.TEXCOORD_1) : null;
+        const UV2 = p.attributes.TEXCOORD_2 !== undefined ? readAccessor(g, bin, p.attributes.TEXCOORD_2) : null;
         const idx = p.indices !== undefined ? Uint32Array.from(readAccessor(g, bin, p.indices)) : Uint32Array.from({ length: cnt }, (_, i) => i);
         const pos = new Float32Array(cnt * 3), nor = new Float32Array(cnt * 3);
         for (let k = 0; k < cnt; k++) {
@@ -205,7 +206,7 @@ const UQ3D = (() => {
         }
         const mat = p.material !== undefined ? g.materials[p.material] : {};
         const pbr = mat.pbrMetallicRoughness || {};
-        out.push({ name: (n.name || "") + " " + (g.meshes[n.mesh].name || "") + " " + (mat.name || ""), pos, nor, uv: Float32Array.from(UV), uv1: UV1 && Float32Array.from(UV1), idx,
+        out.push({ name: (n.name || "") + " " + (g.meshes[n.mesh].name || "") + " " + (mat.name || ""), pos, nor, uv: Float32Array.from(UV), uv1: UV1 && Float32Array.from(UV1), uv2: UV2 && Float32Array.from(UV2), idx,
           color: (pbr.baseColorFactor || [1, 1, 1, 1]).slice(0, 3), alphaMode: mat.alphaMode || "OPAQUE",
           tex: pbr.baseColorTexture ? g.textures[pbr.baseColorTexture.index].source : undefined });
       });
@@ -268,7 +269,14 @@ const UQ3D = (() => {
       return m > 1 ? [rxi * Math.sqrt(m) + GAP, rzi * Math.sqrt(m) + GAP] : null;
     };
     const SLOPE = .45;                                                     // growth fades into the rings around it (metres of radius per metre of height)
-    return (rings, mode = "torso") => {
+    /* how far the body reaches forward and back around x at height y (cloth laid over it must clear this) */
+    const reach = (x, y, half) => {
+      const pts = levels[Math.max(0, Math.min(levels.length - 1, Math.round(y / LEVEL)))];
+      let z0 = 0, z1 = 0;
+      for (const [px, pz] of pts) if (Math.abs(px - x) <= half) { z0 = Math.min(z0, pz); z1 = Math.max(z1, pz); }
+      return [z0, z1];
+    };
+    return Object.assign((rings, mode = "torso") => {
       const grown = rings.map((r) => need(r, mode));
       return rings.map((r) => {
         let rx = r.rx, rz = r.rz;
@@ -279,7 +287,7 @@ const UQ3D = (() => {
         });
         return rx === r.rx && rz === r.rz ? r : { ...r, rx, rz };
       });
-    };
+    }, { reach });
   }
 
   /* refit the torso, arm and leg profiles (and so every garment) to the measured body */
@@ -373,7 +381,8 @@ const UQ3D = (() => {
       // ring(y, pad): an ellipse hugging this piece at height y (belts, waistbands)
       const ring = (y, pad) => { const b = Math.max(0, Math.min(89, Math.floor(y / .02)));
         return { y, rx: xr[b] + pad, rz: (z1[b] - z0[b]) / 2 + pad, cz: (z1[b] + z0[b]) / 2 }; };
-      parts[p.name.trim().split(" ")[0]] = { pos: p.pos, nor: p.nor, uv, idx: p.idx, total, top, rad, ring };
+      const ao = p.uv2 ? Float32Array.from({ length: n }, (_, k) => p.uv2[k * 2]) : null;   // fold shadows baked in Blender
+      parts[p.name.trim().split(" ")[0]] = { pos: p.pos, nor: p.nor, uv, ao, idx: p.idx, total, top, rad, ring };
     });
     return parts;
   }
@@ -384,6 +393,15 @@ const UQ3D = (() => {
       .catch((e) => { console.info("Uniqo garment not used:", name, e.message); return (garmentLib[name] = false); }));
     return garmentLoads.get(name);
   }
+  /* which drape a look wears: the cloth's weight picks the file; fitted cuts have only one */
+  const drapeName = (L) => { const b = `${L.sil}-${effLen(L.sil, L.len)}`, w = (FAB[L.fab] || {}).wt; return w && !["sheath", "kurta"].includes(L.sil) ? `${b}-${w}` : b; };
+  /* a fabric's weave tile, made by tools/fabrics.py: RG relief, B tone, A coverage */
+  const fabricMaps = new Map();
+  const loadFabricMap = (key) => {
+    if (!fabricMaps.has(key)) fabricMaps.set(key, fetch(`/assets/fabrics/${key}.png`).then((r) => (r.ok ? r.blob() : null))
+      .then((b) => (b ? createImageBitmap(b, { premultiplyAlpha: "none", colorSpaceConversion: "none" }) : null)).catch(() => null));
+    return fabricMaps.get(key);
+  };
   const getAvatar = (url) => (avatarPromise ??= loadAvatar(url).catch((e) => { console.info("Uniqo avatar not used:", e.message); return null; }));
 
   /* A faceless, boutique-mannequin head: an oval that tapers to a soft chin, with the
@@ -426,13 +444,15 @@ const UQ3D = (() => {
   }
 
   /* ------------------------------------------------------------------ fabrics (render side) */
+  // cover: share of light the cloth stops (under 1 lets the skin show); wt: which Blender drape it uses;
+  // relief: weave depth; aniso: 0 = soft all-round shine, 1 = silk's long highlights along the folds
   const FAB = {
-    cotton: { tex: 1, sheen: .12, power: 10, sheer: 0 }, linen: { tex: 2, sheen: .08, power: 8, sheer: 0 },
-    denim: { tex: 3, sheen: .06, power: 8, sheer: 0 }, rayon: { tex: 6, sheen: .26, power: 24, sheer: 0 },
-    crepe: { tex: 4, sheen: .16, power: 14, sheer: 0 }, georgette: { tex: 5, sheen: .18, power: 20, sheer: .2 },
-    chiffon: { tex: 6, sheen: .2, power: 24, sheer: .36 }, chanderi: { tex: 8, sheen: .28, power: 30, sheer: .28 },
-    chikankari: { tex: 9, sheen: .08, power: 10, sheer: .1 }, silk: { tex: 0, sheen: .55, power: 48, sheer: 0 },
-    satin_silk: { tex: 0, sheen: .85, power: 90, sheer: 0 }, space_silk: { tex: 7, sheen: .6, power: 60, sheer: 0 },
+    cotton: { tex: 1, sheen: .1, power: 8, relief: .55, aniso: 0, cover: 1, wt: "crisp" }, linen: { tex: 2, sheen: .06, power: 7, relief: .9, aniso: 0, cover: 1, wt: "crisp" },
+    denim: { tex: 3, sheen: .05, power: 8, relief: .5, aniso: 0, cover: 1, wt: "crisp" }, rayon: { tex: 6, sheen: .28, power: 26, relief: .2, aniso: .4, cover: 1, wt: "" },
+    crepe: { tex: 4, sheen: .12, power: 12, relief: .75, aniso: 0, cover: 1, wt: "" }, georgette: { tex: 5, sheen: .16, power: 18, relief: .6, aniso: 0, cover: .8, wt: "fluid" },
+    chiffon: { tex: 6, sheen: .2, power: 24, relief: .3, aniso: .1, cover: .62, wt: "fluid" }, chanderi: { tex: 8, sheen: .28, power: 30, relief: .3, aniso: .3, cover: .74, wt: "" },
+    chikankari: { tex: 9, sheen: .08, power: 10, relief: .45, aniso: 0, cover: .93, wt: "" }, silk: { tex: 0, sheen: .6, power: 56, relief: .25, aniso: .7, cover: 1, wt: "" },
+    satin_silk: { tex: 0, sheen: 1, power: 90, relief: .05, aniso: .9, cover: 1, wt: "" }, space_silk: { tex: 7, sheen: .6, power: 60, relief: .25, aniso: .5, cover: 1, wt: "" },
   };
   const NECK = { round: 0, v: 1, sweetheart: 2, boat: 3, square: 4, mandarin: 5 };
   const EMB = ["gota", "zari", "mirror", "sequins", "block", "pearls"];
@@ -447,13 +467,13 @@ const UQ3D = (() => {
     const fx = FAB[L.fab] || FAB.cotton;
     const fabStats = (cfg && cfg.fabrics.find((f) => f.key === L.fab)) || { stats: { drape: 3 } };
     const drape = 0.35 + ((fabStats.stats.drape - 1) / 4) * 1.05;          // stiff denim .35 ... flowing chiffon 1.4
-    const sheer = Math.max(0, fx.sheer - (L.lining ? 0.22 : 0));
+    const cover = fx.cover ?? 1;                                           // a sheer cloth lets skin through except where a slip sits under it
     const mannequin = L.skin === "mannequin";
     const skin = hexRgb(mannequin ? "#2a2420" : L.skin);
     const col = hexRgb(L.col), acc = hexRgb(L.acc);
     const emb = EMB.map((k) => (L.emb || []).includes(k) ? 1 : 0);
     const E = 0.012;                                                       // cloth sits this far off the skin
-    const fabric = (extra = {}) => ({ kind: 2, color: col, accent: acc, tex: fx.tex, sheen: fx.sheen, power: fx.power, alpha: 1, emb, ...extra });
+    const fabric = (extra = {}) => ({ kind: 2, color: col, accent: acc, tex: fx.tex, sheen: fx.sheen, power: fx.power, relief: fx.relief, aniso: fx.aniso, map: 1, alpha: 1, emb, ...extra });
     const add = (geo, mat) => out.push({ geo, mat });
     const fit = av ? av.cover : (rings) => rings;                          // an exported body: every garment encloses it
 
@@ -528,10 +548,14 @@ const UQ3D = (() => {
     const bodiceGeo = loft(fit(top));
     const nd = { round: .065, v: .17, sweetheart: .1, boat: .035, square: .12, mandarin: 0 }[L.neck] || .065;
     const bodiceMat = fabric({ bodice: 1, neck: NECK[L.neck] ?? 0, neckTop, pearlTop: neckTop - nd - .02, pearlBottom: Math.max(bodiceEnd, .95) + .02,
-      hem: L.sil === "kurta" ? 1 : 0, len: bodiceGeo.total, slit: L.sil === "kurta" ? 1 : 0, alpha: 1 - sheer * .3 });
+      hem: L.sil === "kurta" ? 1 : 0, len: bodiceGeo.total, slit: L.sil === "kurta" ? 1 : 0, alpha: cover });
     let skirtGeo = null;
     let skirtR = () => 0;
-    const G = av && garmentLib[`${L.sil}-${len}`];                       // draped in Blender for this body, when available
+    const base = `${L.sil}-${len}`;                                       // draped in Blender for this body, when available
+    const G = av && (garmentLib[drapeName(L)] || garmentLib[base] || garmentLib[base + "-crisp"] || garmentLib[base + "-fluid"]);
+    // the slip under a sheer cloth: lined, it reaches almost to the hem; unlined, it stops at the upper thigh
+    const hemY = L.sil === "kurta" ? KURTA_HEM[len] : HEM[len];
+    const slipB = L.lining ? hemY + .07 : Math.max(hemY + .07, .74);
 
     const trousers = () => [1, -1].forEach((s) => add(loft(fit(mirrorRings([[.9, .075, .1], [.6, .088, .11], [.3, .094, .122], [.04, .1, .135]].map(([y, cx, r]) => ({ y, cx, cz: 0, rx: r, rz: r * .92 })), s), "limb"), { seg: 28 }),
       { kind: 2, color: hexRgb(L.col).map((c) => Math.min(1, c * (0.5 < (col[0] + col[1] + col[2]) / 3 ? .82 : 1.55))), accent: acc, tex: fx.tex, sheen: fx.sheen * .6, power: fx.power, alpha: 1, emb: [0, 0, 0, 0, 0, 0] }));
@@ -539,7 +563,7 @@ const UQ3D = (() => {
 
     if (G && G.bodice && G.skirt) {
       const borders = { lehenga: .14, saree: .055 }[L.sil] || 0;
-      add(G.skirt, fabric({ hem: 1, len: G.skirt.total, alpha: 1 - sheer * .22, border: borders, slit: L.sil === "kurta" ? 1 : 0 }));
+      add(G.skirt, fabric({ hem: 1, len: G.skirt.total, alpha: cover, slipT: 9, slipB, border: borders, slit: L.sil === "kurta" ? 1 : 0 }));
       skirtR = (y) => (y > seam ? 0 : G.skirt.rad[Math.max(0, Math.min(89, Math.floor(y / .02)))]);
       if (L.sil === "kurta") trousers();
       if (L.sil === "lehenga") { const r0 = G.skirt.ring(G.skirt.top - .005, .006), r1 = G.skirt.ring(G.skirt.top - .035, .008); add(loft([{ ...r0, y: G.skirt.top + .004 }, { ...r1, y: G.skirt.top - .03 }]), { kind: 3, color: acc }); }
@@ -577,18 +601,18 @@ const UQ3D = (() => {
       skirtR = (y) => { const r = rings.find((q) => q.y <= y) || rings[rings.length - 1]; return y > waist ? 0 : r.rx * (1 + folds[1] * drape); };
       const pocketX = L.pockets && ["aline", "sheath", "anarkali"].includes(L.sil) ? 2 * Math.PI * w0.rx * .2 : 0;
       // lehenga / saree: a deep contrast border drawn by the shader, so it follows every fold
-      add(skirtGeo, fabric({ hem: 1, len: skirtGeo.total, alpha: 1 - sheer * .22, pocket: pocketX, border: L.sil === "lehenga" ? .14 : L.sil === "saree" ? .055 : 0 }));
+      add(skirtGeo, fabric({ hem: 1, len: skirtGeo.total, alpha: cover, slipT: 9, slipB, pocket: pocketX, border: L.sil === "lehenga" ? .14 : L.sil === "saree" ? .055 : 0 }));
       if (L.sil === "lehenga") add(loft([{ y: waist + .02, rx: w0.rx + E + .006, rz: w0.rz + E + .006 }, { y: waist - .012, rx: w0.rx + E + .008, rz: w0.rz + E + .008 }]), { kind: 3, color: acc });
     }
     if (G && G.bodice) {
       // the draped bodice runs 4.5 cm up the neck (a mandarin collar); every other neckline starts at the neck base
       const top = G.bodice.top - (L.neck === "mandarin" ? 0 : .045);
-      add(G.bodice, { ...bodiceMat, neckTop: top, pearlTop: top - nd - .02, len: G.bodice.total, hem: 0, slit: 0 });
-    } else add(bodiceGeo, bodiceMat);
+      add(G.bodice, { ...bodiceMat, neckTop: top, pearlTop: top - nd - .02, len: G.bodice.total, hem: 0, slit: 0, slipT: L.lining ? 9 : G.bodice.top - .155, slipB: -9 });
+    } else add(bodiceGeo, { ...bodiceMat, slipT: L.lining ? 9 : neckTop - .11, slipB: -9 });
 
     /* sleeves */
     const end = SLEEVE_END[L.slv], S = av && garmentLib.sleeves && garmentLib.sleeves["sleeve-" + L.slv];
-    if (S) add(S, fabric({ hem: 1, len: S.total, alpha: 1 - sheer * 1.25, cuff: 1 }));
+    if (S) add(S, fabric({ hem: 1, len: S.total, alpha: cover, cuff: 1 }));          // sleeves are never lined
     else if (end) [1, -1].forEach((side) => {
       const ys = []; for (let y = 1.342; y > end; y -= .02) ys.push(y); ys.push(end);
       const n = ys.length;
@@ -599,7 +623,7 @@ const UQ3D = (() => {
         return { y, cx: a.cx * side, cz: a.cz, rx: r, rz: r };
       });
       const g = loft(fit(rings, "limb"), { seg: 28 });
-      add(g, fabric({ hem: 1, len: g.total, alpha: 1 - sheer * 1.25, cuff: 1 }));
+      add(g, fabric({ hem: 1, len: g.total, alpha: cover, cuff: 1 }));
     });
 
     /* belt + collar */
@@ -623,41 +647,49 @@ const UQ3D = (() => {
     };
     // a draped bodice tells us where this body's shoulders are: lift the cloth's upper end to rest on them
     const dS = G && G.bodice ? G.bodice.top - .045 - 1.385 : 0;
-    const lift = ([x, y, z]) => [x, y + dS * Math.min(1, Math.max(0, (y - 1.0) / .37)), z];
-    const strip = (ctrl, w, alpha) => { const g = ribbon(spline(ctrl.map(lift).map(clear), 8).map(clear), w); add(g, fabric({ hem: 1, len: g.total, alpha, ribbon: 1, color: shade(L.col, .08) })); };
+    const lift = ([x, y, z]) => [x, y + (dS - .018) * Math.min(1, Math.max(0, (y - 1.0) / .37)), z];
+    // ... and lay it over the body: across the whole width of the strip it stays outside the bust, shoulder and seat
+    const onBody = (w) => ([x, y, z]) => {
+      if (!av || y < .7) return [x, y, z];
+      let z0 = 0, z1 = 0;                                                  // a diagonal strip's edges sit above and below its centre
+      for (let dy = -w * .55; dy <= w * .55; dy += .02) { const r = av.cover.reach(x, y + dy, w * .6); z0 = Math.min(z0, r[0]); z1 = Math.max(z1, r[1]); }
+      return [x, y, z >= 0 ? Math.max(z, z1 + .016) : Math.min(z, z0 - .016)];
+    };
+    const smoothZ = (pts) => pts.map((p, i) => { const a = pts[Math.max(i - 2, 0)], b = pts[Math.min(i + 2, pts.length - 1)]; return [p[0], p[1], Math.abs(p[2]) >= Math.abs((a[2] + b[2]) / 2) ? p[2] : (a[2] + b[2]) / 2]; });
+    const strip = (ctrl, w, alpha) => { const g = ribbon(smoothZ(spline(ctrl.map(lift).map(clear), 8).map(clear).map(onBody(w))), av ? (t) => w * Math.min(1, .3 + t * 7) : w); add(g, fabric({ hem: 1, len: g.total, alpha, ribbon: 1, color: shade(L.col, .08) })); };
     if (L.sil === "saree") {
-      strip([[-.15, 1.372, .035], [-.075, 1.28, .128], [.02, 1.18, .142], [.1, 1.08, .128], [.16, 1.0, .09], [.19, .95, .03]], .17, 1 - sheer * .6);
-      strip([[-.15, 1.378, 0], [-.17, 1.3, -.095], [-.19, 1.1, -.135], [-.2, .85, -.155], [-.2, .6, -.16]], .21, 1 - sheer * .6);
+      strip([[-.15, 1.372, .035], [-.075, 1.28, .128], [.02, 1.18, .142], [.1, 1.08, .128], [.16, 1.0, .09], [.19, .95, .03]], .17, cover);
+      strip([[-.15, 1.378, 0], [-.17, 1.3, -.095], [-.19, 1.1, -.135], [-.2, .85, -.155], [-.2, .6, -.16]], .21, cover);
     } else if (L.dup === "draped") {
-      strip([[-.15, 1.372, .035], [-.075, 1.28, .13], [.02, 1.18, .145], [.12, 1.06, .13], [.2, .95, .08], [.25, .75, .07], [.28, .5, .06], [.29, .32, .05]], .18, .62 - sheer * .2);
-      strip([[-.15, 1.378, 0], [-.18, 1.22, -.12], [-.2, .95, -.15], [-.21, .6, -.15]], .2, .62 - sheer * .2);
+      strip([[-.15, 1.372, .035], [-.075, 1.28, .13], [.02, 1.18, .145], [.12, 1.06, .13], [.2, .95, .08], [.25, .75, .07], [.28, .5, .06], [.29, .32, .05]], .18, cover);
+      strip([[-.15, 1.378, 0], [-.18, 1.22, -.12], [-.2, .95, -.15], [-.21, .6, -.15]], .2, cover);
     } else if (L.dup === "shoulder") {
-      strip([[-.16, 1.375, .045], [-.2, 1.26, .1], [-.23, 1.02, .112], [-.25, .72, .1], [-.26, .46, .09]], .18, .66 - sheer * .2);
-      strip([[-.16, 1.378, -.01], [-.2, 1.26, -.1], [-.23, 1.0, -.12], [-.25, .66, -.11]], .18, .66 - sheer * .2);
+      strip([[-.16, 1.375, .045], [-.2, 1.26, .1], [-.23, 1.02, .112], [-.25, .72, .1], [-.26, .46, .09]], .18, cover);
+      strip([[-.16, 1.378, -.01], [-.2, 1.26, -.1], [-.23, 1.0, -.12], [-.25, .66, -.11]], .18, cover);
     }
     return out;
   }
 
   /* ------------------------------------------------------------------ shaders */
   const VS = `#version 300 es
-in vec3 aPos; in vec3 aNor; in vec4 aUv;
+in vec3 aPos; in vec3 aNor; in vec4 aUv; in float aAo;
 uniform mat4 uProj, uView; uniform float uYaw; uniform vec4 uXf;
-out vec3 vWorld; out vec3 vNor; out vec4 vUv; out vec3 vLocal;
+out vec3 vWorld; out vec3 vNor; out vec4 vUv; out vec3 vLocal; out float vAo;
 void main(){
   float c = cos(uYaw), s = sin(uYaw);
   mat3 R = mat3(c, 0., -s, 0., 1., 0., s, 0., c);
   vec3 p = R * (aPos * uXf.x + uXf.yzw);       // uXf: per-mesh scale + offset (hair fitted to a head)
-  vWorld = p; vLocal = aPos; vNor = R * aNor; vUv = aUv;
+  vWorld = p; vLocal = aPos; vNor = R * aNor; vUv = aUv; vAo = aAo;
   gl_Position = uProj * uView * vec4(p, 1.);
 }`;
   const FS = `#version 300 es
 precision highp float;
-in vec3 vWorld; in vec3 vNor; in vec4 vUv; in vec3 vLocal;
+in vec3 vWorld; in vec3 vNor; in vec4 vUv; in vec3 vLocal; in float vAo;
 uniform vec3 uCam, uColor, uAccent;
 uniform int uKind, uTex, uNeck;
 uniform float uSheen, uPower, uAlpha, uSpec, uNeckTop, uPearlTop, uPearlBottom, uHem, uLen, uSlit, uPocket, uBodice, uFlat, uBorder, uFace, uLock;
 uniform float uEmb[6];
-uniform sampler2D uTex0; uniform float uUseTex; uniform vec3 uTint;
+uniform sampler2D uTex0, uTex1; uniform float uUseTex, uMapOn, uRelief, uAniso, uSlipT, uSlipB, uLayer; uniform vec3 uTint;
 out vec4 frag;
 float hash(vec2 p){ p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
 float neckDepth(float a){
@@ -674,7 +706,8 @@ void main(){
   vec3 N = normalize(vNor), V = normalize(uCam - vWorld);
   if (dot(N, V) < 0.) N = -N;                       // two-sided cloth
   float uN = vUv.x, vN = vUv.y, uM = vUv.z, vM = vUv.w;
-  vec3 alb = uColor; float spec = uSpec, power = 14., rim = .1, alpha = 1., metal = 0.;
+  vec3 alb = uColor; float spec = uSpec, power = 14., rim = .1, alpha = 1., metal = 0., zone = 0.;
+  vec3 W = vec3(0.);                                 // the cloth's weft direction, for silk's long highlights
 
   if (uKind == 4) {                                  // contact shadow on the podium
     frag = vec4(0., 0., 0., .5 * pow(1. - vN, 2.2)); return;
@@ -714,7 +747,7 @@ void main(){
     spec = uKind == 7 ? .08 : .03; power = 16.; rim = .14;
   }
   if (uKind == 2) {
-    alpha = uAlpha; spec = uSheen * .7; power = uPower; rim = uSheen * .55 + .08;
+    spec = uSheen * .7; power = uPower; rim = uSheen * .55 + .08;
     if (uBodice > .5) {
       float edge = (uNeckTop - neckDepth((uN - .5) * 6.28318)) - vLocal.y;
       if (edge < 0.) discard;
@@ -722,9 +755,24 @@ void main(){
     }
     float hd = uLen - vM;                            // metres up from the hem
     if (uSlit > .5 && (abs(uN - .25) < .004 || abs(uN - .75) < .004) && hd < .2) discard;
-    /* weave */
+    /* weave: the fabric's own tile from Blender */
     float m = 1.;
-    if (uTex == 1) m = 1. - .08 * abs(sin(uM * 760.) * sin(vM * 760.));
+    vec2 fuv = vec2(uM, vM) / .06;
+    vec3 dpx = dFdx(vWorld), dpy = dFdy(vWorld); vec2 dux = dFdx(fuv), duy = dFdy(fuv);
+    vec3 Tt = dpx * duy.y - dpy * dux.y, Bt = dpy * dux.x - dpx * duy.x;
+    if (uAlpha < .99) {                              // sheer: only where no slip lies beneath
+      zone = 1. - smoothstep(uSlipB - .025, uSlipB + .025, vLocal.y) * (1. - smoothstep(uSlipT - .025, uSlipT + .025, vLocal.y));
+    }
+    if (uMapOn > .5) {
+      vec4 tx = texture(uTex1, fuv);
+      if (dot(Tt, Tt) > 1e-14 && dot(Bt, Bt) > 1e-14) N = normalize(N + (normalize(Tt) * (tx.r - .5) + normalize(Bt) * (tx.g - .5)) * 2. * uRelief);
+      alb *= tx.b * 2.;
+      alpha = mix(1., tx.a, zone);
+    } else alpha = mix(1., uAlpha, zone);
+    if (uLayer < .5 && zone < .02) discard;          // the far wall of a sheer skirt only matters where you can see through
+    alpha *= uLayer < .5 ? .45 : mix(1., .8, zone);
+    if (uMapOn > .5 && uTex < 7) { }
+    else if (uTex == 1) m = 1. - .08 * abs(sin(uM * 760.) * sin(vM * 760.));
     else if (uTex == 2) m = 1. - .11 * step(.83, hash(vec2(floor(vM * 260.), floor(uM * 16.)))) + .03 * sin(vM * 1500.);
     else if (uTex == 3) { m = .8 + .3 * smoothstep(.25, .6, fract((uM + vM) * 190.)); alb = mix(alb, alb * 1.35, .18 * hash(floor(vec2(uM * 6., vM * 40.)))); }
     else if (uTex == 4) m = .93 + .1 * hash(floor(vec2(uM, vM) * 430.));
@@ -761,13 +809,20 @@ void main(){
   vec3 amb = mix(vec3(.1, .085, .075), vec3(.24, .21, .19), N.y * .5 + .5);
   vec3 col = a * (amb + max(dot(N, L1), 0.) * vec3(1., .95, .88) * 1.05 + max(dot(N, L3), 0.) * vec3(.55, .5, .48) * .45)
            + a * max(dot(N, L2), 0.) * vec3(1., .82, .55) * .4;
-  float s = pow(max(dot(N, normalize(L1 + V)), 0.), power) + .5 * pow(max(dot(N, normalize(L3 + V)), 0.), power);
+  vec3 H1 = normalize(L1 + V), H3 = normalize(L3 + V);
+  float s = pow(max(dot(N, H1), 0.), power) + .5 * pow(max(dot(N, H3), 0.), power);
+  if (uKind == 2 && uAniso > 0. && abs(N.y) < .97) {  // silk: threads throw long highlights along the fold, not round spots
+    W = normalize(cross(vec3(0., 1., 0.), N));
+    float a1 = sqrt(max(1. - pow(dot(W, H1), 2.), 0.)), a3 = sqrt(max(1. - pow(dot(W, H3), 2.), 0.));
+    s = mix(s, (pow(a1, power * 2.4) + .5 * pow(a3, power * 2.4)) * .5 * max(dot(N, L1) * .5 + .5, 0.), uAniso);
+  }
   vec3 tint = metal > 0. && metal != 2. && metal != 5. ? a * 1.7 + .15 : vec3(1., .96, .88);
   col += tint * s * spec;
   float fr = pow(1. - max(dot(N, V), 0.), 3.);
   col += fr * rim * mix(vec3(1., .84, .58), a * 2., .5);
+  col *= mix(.34, 1., smoothstep(.12, .85, vAo));    // baked fold shadows
   col = col / (col + vec3(.8)) * 1.55;
-  if (uKind == 2 && alpha < 1.) alpha = mix(alpha, 1., fr * .6);   // sheer cloth looks denser at the folds
+  if (uKind == 2 && zone > 0. && metal == 0.) alpha = mix(alpha, 1., fr * .75);   // seen edge-on, sheer cloth is dense
   frag = vec4(pow(col, vec3(1. / 2.2)), alpha);
 }`;
 
@@ -778,17 +833,18 @@ void main(){
     canvas.setAttribute("role", "img");
     canvas.setAttribute("aria-label", "Your avatar in 3D. Drag to turn.");
     container.appendChild(canvas);
-    const gl = canvas.getContext("webgl2", { antialias: true, alpha: true, premultipliedAlpha: false });
+    const gl = canvas.getContext("webgl2", { antialias: true, alpha: true });
     if (!gl) { canvas.remove(); return null; }
 
     const sh = (type, src) => { const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s);
       if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s)); return s; };
     const prog = gl.createProgram();
     gl.attachShader(prog, sh(gl.VERTEX_SHADER, VS)); gl.attachShader(prog, sh(gl.FRAGMENT_SHADER, FS));
-    gl.bindAttribLocation(prog, 0, "aPos"); gl.bindAttribLocation(prog, 1, "aNor"); gl.bindAttribLocation(prog, 2, "aUv");
+    gl.bindAttribLocation(prog, 0, "aPos"); gl.bindAttribLocation(prog, 1, "aNor"); gl.bindAttribLocation(prog, 2, "aUv"); gl.bindAttribLocation(prog, 3, "aAo");
     gl.linkProgram(prog);
     if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(prog));
     gl.useProgram(prog);
+    gl.vertexAttrib1f(3, 1);                                               // no baked shadow: fully open
     const U = {}; const u = (n) => (U[n] ??= gl.getUniformLocation(prog, n));
 
     let meshes = [], yaw = 0, vel = 0, dragging = false, lastX = 0, idleAt = performance.now(), flip = null, wobble = 0, raf = 0, alive = true;
@@ -797,10 +853,11 @@ void main(){
 
     function upload(geo) {
       const vao = gl.createVertexArray(); gl.bindVertexArray(vao);
-      const bufs = [[geo.pos, 3], [geo.nor, 3], [geo.uv, 4]].map(([data, size], loc) => {
+      const bufs = [[geo.pos, 3], [geo.nor, 3], [geo.uv, 4], [geo.ao, 1]].map(([data, size], loc) => {
+        if (!data) return null;
         const b = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, b); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(data), gl.STATIC_DRAW);
         gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, size, gl.FLOAT, false, 0, 0); return b;
-      });
+      }).filter(Boolean);
       const ib = gl.createBuffer(); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ib); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(geo.idx), gl.STATIC_DRAW);
       gl.bindVertexArray(null);
       return { vao, bufs: [...bufs, ib], count: geo.idx.length };
@@ -808,7 +865,8 @@ void main(){
     function free() { meshes.forEach((m) => { gl.deleteVertexArray(m.vao); m.bufs.forEach((b) => gl.deleteBuffer(b)); }); meshes = []; }
 
     /* exported body: uploaded once, drawn with every look */
-    let avatar = null, avMeshes = [], lastLook = null, look = { skin: null };
+    let avatar = null, avMeshes = [], lastLook = null, look = { skin: null }, curFab = null, closeUp = 0, zoom = 0;
+    const fabTex = new Map(), aniso = gl.getExtension("EXT_texture_filter_anisotropic");
     function uploadAvatar(av) {
       const texs = av.bitmaps.map((bm) => {
         const t = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, t);
@@ -832,16 +890,41 @@ void main(){
     }
     if (opts.avatarUrl) getAvatar(opts.avatarUrl).then((av) => {
       if (!av || !alive) return;
-      try { avMeshes = uploadAvatar(av); avatar = av; if (lastLook) setLook(...lastLook); opts.onAvatar && opts.onAvatar(av); }
-      catch (e) { console.info("Uniqo avatar not used:", e.message); avMeshes = []; avatar = null; }
+      // keep the current view until the body and its first garment can appear together
+      const first = lastLook ? [loadGarment(drapeName(lastLook[0]), av), loadGarment("sleeves", av)] : [];
+      Promise.all(first).then(() => {
+        if (!alive) return;
+        try { avMeshes = uploadAvatar(av); avatar = av; if (lastLook) setLook(...lastLook); opts.onAvatar && opts.onAvatar(av); }
+        catch (e) { console.info("Uniqo avatar not used:", e.message); avMeshes = []; avatar = null; }
+      });
     });
 
     function setLook(L, cfg) {
-      free();
       lastLook = [L, cfg];
-      if (avatar) [`${L.sil}-${effLen(L.sil, L.len)}`, "sleeves"].forEach((name) => {
-        if (!(name in garmentLib)) loadGarment(name, avatar).then((parts) => { if (parts && alive && lastLook) setLook(...lastLook); });
-      });
+      // a new cut still on its way: hold the outfit on show rather than flash a generated one
+      if (avatar && meshes.length && !(drapeName(L) in garmentLib)) {
+        const b = `${L.sil}-${effLen(L.sil, L.len)}`, have = [b, b + "-crisp", b + "-fluid"].some((n) => garmentLib[n]);
+        if (!have) { loadGarment(drapeName(L), avatar).then((parts) => {
+          if (parts) setLook(...lastLook); else if (drapeName(L) !== b) loadGarment(b, avatar).then(() => setLook(...lastLook)); else setLook(...lastLook);
+        }); return; }
+      }
+      free();
+      const redraw = (ok) => { if (ok && alive && lastLook) setLook(...lastLook); };
+      if (avatar) {
+        const want = drapeName(L), base = `${L.sil}-${effLen(L.sil, L.len)}`;
+        if (!(want in garmentLib)) loadGarment(want, avatar).then((parts) => { if (parts) redraw(true); else if (want !== base) loadGarment(base, avatar).then(redraw); });
+        if (!("sleeves" in garmentLib)) loadGarment("sleeves", avatar).then(redraw);
+      }
+      curFab = L.fab;
+      if (!fabTex.has(L.fab)) { fabTex.set(L.fab, null); loadFabricMap(L.fab).then((bm) => {
+        if (!bm || !alive) return;
+        const t = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, t);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, bm);
+        gl.generateMipmap(gl.TEXTURE_2D);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+        if (aniso) gl.texParameterf(gl.TEXTURE_2D, aniso.TEXTURE_MAX_ANISOTROPY_EXT, 8);
+        fabTex.set(L.fab, t);
+      }); }
       look = { skin: L.skin === "mannequin" ? null : hexRgb(L.skin) };
       meshes = build(L, cfg, avatar).map(({ geo, mat }) => ({ ...upload(geo), mat, shadow: !!geo.shadow }));
       wobble = .16;
@@ -883,20 +966,27 @@ void main(){
 
       const w = canvas.width, h = canvas.height, aspect = w / h;
       const fovy = 34 * Math.PI / 180, th = Math.tan(fovy / 2);
-      const D = Math.max(2.0 / (2 * th), 1.3 / (2 * th * aspect));
-      cam = [0, .97, D];
+      zoom += (closeUp - zoom) * .12;                                      // close-up: walk in to feel the cloth
+      const D = Math.max(2.0 / (2 * th), 1.3 / (2 * th * aspect)) * lerp(1, .3, zoom), aimY = lerp(.86, .98, zoom);
+      cam = [0, lerp(.97, 1.02, zoom), D];
       gl.viewport(0, 0, w, h);
       gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
       gl.enable(gl.DEPTH_TEST); gl.disable(gl.CULL_FACE);
-      gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+      gl.enable(gl.BLEND); gl.blendFuncSeparate(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
       gl.uniformMatrix4fv(u("uProj"), false, perspective(fovy, aspect, .1, 20));
-      gl.uniformMatrix4fv(u("uView"), false, lookAt(cam, [0, .86, 0], [0, 1, 0]));
+      gl.uniformMatrix4fv(u("uView"), false, lookAt(cam, [0, aimY, 0], [0, 1, 0]));
       gl.uniform3fv(u("uCam"), cam);
-      gl.uniform1i(u("uTex0"), 0); gl.activeTexture(gl.TEXTURE0);
+      gl.uniform1i(u("uTex0"), 0); gl.uniform1i(u("uTex1"), 1);
+      const ftex = fabTex.get(curFab) || null;
+      gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, ftex); gl.activeTexture(gl.TEXTURE0);
       const all = avatarDrawList().concat(meshes);
-      const pass = (transparent) => all.forEach((m) => {
+      const isSheer = (m) => m.mat.kind === 2 && (m.mat.alpha ?? 1) < .99;
+      const drawAll = (pick, layer) => all.forEach((m) => {
         const M = m.mat, a = M.alpha ?? 1;
-        if (m.shadow ? transparent : (a < .99) !== transparent) return;
+        if (!pick(m)) return;
+        gl.uniform1f(u("uLayer"), layer);
+        gl.uniform1f(u("uMapOn"), M.map && ftex ? 1 : 0); gl.uniform1f(u("uRelief"), M.relief ?? 0); gl.uniform1f(u("uAniso"), M.aniso ?? 0);
+        gl.uniform1f(u("uSlipT"), M.slipT ?? -9); gl.uniform1f(u("uSlipB"), M.slipB ?? -9);
         gl.uniform1f(u("uYaw"), m.shadow ? 0 : shownYaw);
         gl.uniform1i(u("uKind"), M.kind);
         gl.uniform3fv(u("uColor"), M.color || [0, 0, 0]);
@@ -916,8 +1006,15 @@ void main(){
         if (m.avatar) { gl.enable(gl.POLYGON_OFFSET_FILL); gl.polygonOffset(1.5, 4); } else gl.disable(gl.POLYGON_OFFSET_FILL);   // cloth wins depth ties with skin
         gl.bindVertexArray(m.vao); gl.drawElements(gl.TRIANGLES, m.count, m.itype || gl.UNSIGNED_SHORT, 0);
       });
-      gl.depthMask(true); pass(false);
-      gl.depthMask(false); pass(true); gl.depthMask(true);
+      gl.depthMask(true); drawAll((m) => !isSheer(m) && !m.shadow && (m.mat.alpha ?? 1) >= .99, 1);       // skin and solid cloth
+      gl.depthMask(false); drawAll((m) => m.shadow, 1);
+      // sheer cloth, in three steps so the front of a skirt never gets painted over by its back:
+      // every layer faintly (folds gather density), then depth alone, then the nearest layer on top
+      drawAll(isSheer, 0);
+      gl.depthMask(true); gl.colorMask(false, false, false, false); gl.depthFunc(gl.LESS); drawAll(isSheer, 1);
+      gl.colorMask(true, true, true, true); gl.depthFunc(gl.LEQUAL); gl.depthMask(false); drawAll(isSheer, 1); gl.depthFunc(gl.LESS);
+      drawAll((m) => !isSheer(m) && !m.shadow && (m.mat.alpha ?? 1) < .99, 1);                             // hair
+      gl.depthMask(true);
     }
     raf = requestAnimationFrame(draw);
 
@@ -936,6 +1033,7 @@ void main(){
         avMeshes.forEach((m) => { if (m.vao) { gl.deleteVertexArray(m.vao); m.bufs.forEach((b) => gl.deleteBuffer(b)); } (m.textures || []).forEach((t) => gl.deleteTexture(t)); });
         canvas.remove();
       },
+      setCloseUp(on) { closeUp = on ? 1 : 0; },
       setYaw(a) { yaw = a; vel = 0; flip = null; idleAt = Infinity; },  // hold a fixed angle (no idle sway) until dragged
       get hasAvatar() { return !!avatar; },
     };

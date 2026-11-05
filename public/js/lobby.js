@@ -18,7 +18,7 @@
 
   /* ---------------- state ---------------- */
   const DEFAULT = { sil: "anarkali", fab: "georgette", col: "#b0245a", acc: "#c9a05a", neck: "sweetheart", slv: "elbow", len: "floor",
-    emb: ["gota"], dup: "none", belt: false, lining: false, pockets: false, skin: "#c98e66" };
+    emb: ["gota"], dup: "none", belt: false, lining: true, pockets: false, skin: "#c98e66" };
   const valid = (L) => {
     const v = { ...DEFAULT, ...L };
     const ok = (arr, k) => arr.some((x) => x.key === k);
@@ -97,14 +97,15 @@
           `<div class="lb-thumb">${thumb({ sil: s.key })}</div><b>${esc(s.label)}</b><small>${esc(s.desc)}</small>${showPrice ? `<span class="lb-price">from ${money(s.base)}</span>` : ""}`)).join("") + "</div>";
     } else if (cat === "fab") {
       const curSil = find(cfg.silhouettes, L.sil);
-      h = `<h2>Fabric</h2><p class="lead">Touch matters. Each fabric changes how your ${esc(curSil.label.toLowerCase())} drapes, breathes and shines.</p>
+      h = `<h2>Fabric</h2><p class="lead">Touch matters. Each swatch is dyed your colour and laid over your skin tone, so you can see how much it covers and how it takes the light.</p>
         <div class="lb-legend"><span>Comfort</span><span>Drape</span><span>Stretch</span><span>Breathe</span><span>Formal</span></div><div style="display:grid;gap:8px">` +
         cfg.fabrics.map((f, i) => {
           const best = (f.best || []).includes(L.sil);
           return card(i, L.fab === f.key, `data-set="fab" data-v="${f.key}"`,
-            `<div class="lb-fab" style="padding:0"><div class="sw">${UQLook.swatch(f.key, L.col, L.acc, "sw" + i)}</div><div>
+            `<div class="lb-fab" style="padding:0"><div class="sw">${clothSwatch(f.key)}</div><div>
               <div class="row"><b>${esc(f.label)}</b>${best ? '<span class="lb-tag best">★ Best match</span>' : `<span class="tagline">${esc(f.tag)}</span>`}</div>
               <small>${esc(f.desc)}</small>
+              ${coverMeter(f)}
               <div class="mini">${["comfort", "drape", "stretch", "breathability", "formality"].map((k) => `<i data-k="${k}" style="--v:${f.stats[k]}"></i>`).join("")}</div>
               ${showPrice ? `<span class="lb-price">${money(f.rate)} / metre · ${esc(f.gsm)} GSM</span>` : `<span class="lb-price">${esc(f.gsm)} GSM</span>`}
             </div></div>`);
@@ -199,6 +200,8 @@
   $("avatar").addEventListener("pointerdown", (e) => { if (!g3) dragX = e.clientX; });
   addEventListener("pointerup", (e) => { if (dragX !== null && Math.abs(e.clientX - dragX) > 50) flip(); dragX = null; });
   const flip = () => { if (g3) { g3.flip(); return; } view = view === "front" ? "back" : "front"; renderStage("spin"); };
+  let close = false;                                                       // walk up to the cloth, in 3D
+  const toggleClose = () => { if (!g3 || !mode3d) return; close = !close; g3.setCloseUp(close); $("closeBtn").setAttribute("aria-pressed", close); };
   const toggle3d = () => { if (!can3d) return; mode3d = !mode3d; store.set("uq_lobby_3d", mode3d); shownView = ""; renderStage("pop"); };
 
   function surprise() {
@@ -211,6 +214,19 @@
       len: r(cfg.lengths).key, emb, dup: Math.random() < 0.35 ? r(["draped", "shoulder"]) : "none", belt: Math.random() < 0.25,
       pockets: Math.random() < 0.3, lining: UQLook.FX[fab].sheer >= 0.18 }, { anim: "spin" });
   }
+
+  /* ---------------- how a cloth covers ---------------- */
+  // the Cycles render of this cloth, dyed the chosen colour and laid over the chosen skin tone (sheer cloth lets it through)
+  const clothSwatch = (key) => {
+    const skin = L.skin === "mannequin" ? "#2a2420" : L.skin, img = `/assets/fabrics/${key}-swatch.webp`;
+    return `<span class="lb-cloth" style="--skin:${skin};--cloth:${L.col};--img:url(${img})"><i></i><img src="${img}" alt="" loading="lazy"></span>`;
+  };
+  const COVER = { 5: "Full coverage", 4: "Soft coverage", 3: "Semi-sheer", 2: "Sheer", 1: "Open" };
+  const coverMeter = (f) => `<div class="lb-cover" title="How much of the skin this cloth hides"><span class="dots">${[1, 2, 3, 4, 5].map((n) => `<i class="${n <= f.cover ? "on" : ""}"></i>`).join("")}</span><span>${COVER[f.cover] || ""}</span></div>`;
+  const coverNote = (f) => f.cover >= 5 ? "Nothing shows through, in any light."
+    : f.cover === 4 ? "A soft veil: skin stays hidden, with a hint of warmth in bright light."
+    : L.lining ? "Lined to just above the hem. Only the sleeves and the hem's edge stay sheer."
+    : "A slip covers the bust and hips. The shoulders, sleeves and lower legs show through.";
 
   /* ---------------- build sheet (stats, fabric, rarity, price) ---------------- */
   const STAT_LABEL = { comfort: "Comfort", drape: "Drape", stretch: "Stretch", breathability: "Breathability", formality: "Formality" };
@@ -233,7 +249,9 @@
         }).join("")}
       </div>
       <div class="lb-block"><h3><span>Your fabric</span><span>${esc(c.fab.tag)}</span></h3>
-        <div class="lb-fabcard"><div class="sw">${UQLook.swatch(c.fab.key, L.col, L.acc, "sheet")}</div><div><b>${esc(c.fab.label)}</b><p>${esc(c.fab.desc)}</p></div></div>
+        <div class="lb-fabcard"><div class="sw">${clothSwatch(c.fab.key)}</div><div><b>${esc(c.fab.label)}</b><p>${esc(c.fab.feel || c.fab.desc)}</p></div></div>
+        ${coverMeter(c.fab)}<p class="lb-cover-note">${coverNote(c.fab)}</p>
+        ${c.fab.cover < 4 ? `<div class="lb-seg" role="group" aria-label="Lining"><button type="button" data-lining="0" aria-pressed="${!L.lining}">Sheer</button><button type="button" data-lining="1" aria-pressed="${!!L.lining}">Fully lined</button></div>` : ""}
         <div class="lb-specs"><div><small>Weight</small>${esc(c.fab.gsm)} GSM</div><div><small>Care</small>${esc(c.fab.care)}</div>
           <div><small>Fabric used</small>${c.meters.toFixed(1)} m</div><div><small>Made in</small>${c.days}–${c.days + 4} days</div></div>
       </div>
@@ -417,12 +435,13 @@
   }
 
   /* ---------------- tools + keyboard ---------------- */
-  $("undoBtn").onclick = undo; $("redoBtn").onclick = redo; $("flipBtn").onclick = flip; $("surpriseBtn").onclick = surprise; $("dimBtn").onclick = toggle3d;
+  $("undoBtn").onclick = undo; $("redoBtn").onclick = redo; $("flipBtn").onclick = flip; $("closeBtn").onclick = () => toggleClose();
+  $("sheet").addEventListener("click", (e) => { const b = e.target.closest("[data-lining]"); if (b) set({ lining: b.dataset.lining === "1" }); }); $("surpriseBtn").onclick = surprise; $("dimBtn").onclick = toggle3d;
   addEventListener("keydown", (e) => {
     if (e.target.closest("input, textarea, select") || document.querySelector(".modal")) return;
     const k = e.key.toLowerCase();
     if (k === "z" && !e.shiftKey) undo(); else if (k === "y" || (k === "z" && e.shiftKey)) redo();
-    else if (k === "f") flip(); else if (k === "r" && !e.ctrlKey && !e.metaKey) surprise(); else if (k === "d") toggle3d();
+    else if (k === "f") flip(); else if (k === "r" && !e.ctrlKey && !e.metaKey) surprise(); else if (k === "d") toggle3d(); else if (k === "c" && !e.ctrlKey && !e.metaKey) toggleClose();
     else if (/^[1-9]$/.test(k)) { cat = CATS[+k - 1].k; renderPanel(); renderRail(); }
   });
 

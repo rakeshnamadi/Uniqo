@@ -267,3 +267,18 @@ body.lobby::after { opacity: .06; mix-blend-mode: screen; }
 @media (prefers-reduced-motion: reduce) {
   .lb-dust, .lb-spot, .lb-podium::before, .lb-podium::after { animation: none !important; }
 }
+
+/* cloth swatches: a Cycles render, dyed live and laid over the customer's skin tone */
+.lb-cloth { position: relative; display: block; width: 100%; height: 100%; overflow: hidden; background: var(--skin); isolation: isolate; }
+.lb-cloth i { position: absolute; inset: 0; background: var(--cloth); -webkit-mask: var(--img) center / cover no-repeat; mask: var(--img) center / cover no-repeat; }
+.lb-cloth img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; mix-blend-mode: hard-light; }
+.lb-fabcard .sw { width: 54px; height: 54px; border-radius: 12px; overflow: hidden; }
+.lb-cover { display: flex; align-items: center; gap: 8px; margin-top: 7px; font-size: 11px; color: var(--txt); }
+.lb-cover .dots { display: inline-flex; gap: 3px; }
+.lb-cover .dots i { width: 9px; height: 9px; border-radius: 50%; border: 1px solid rgb(255 255 255 / .28); }
+.lb-cover .dots i.on { background: var(--gold-hi, #e8cf9b); border-color: transparent; }
+.lb-cover-note { margin: 6px 0 0; font-size: 12px; line-height: 1.45; color: var(--sub); }
+.lb-seg { display: grid; grid-template-columns: 1fr 1fr; gap: 3px; margin: 10px 0 2px; padding: 3px; border-radius: 999px; background: rgb(255 255 255 / .06); }
+.lb-seg button { border: 0; border-radius: 999px; padding: 7px 10px; font-size: 12px; background: transparent; color: var(--sub); cursor: pointer; transition: background .25s, color .25s; }
+.lb-seg button[aria-pressed="true"] { background: var(--gold-grad); color: #1a130b; font-weight: 600; }
+.lb-tools button[aria-pressed="true"] { background: rgb(214 176 106 / .28); }
